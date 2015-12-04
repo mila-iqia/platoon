@@ -1,4 +1,4 @@
-from multiprocessing import Process
+import numpy
 import cffi
 
 import zmq
@@ -8,6 +8,8 @@ import posix_ipc
 # $ conda install pyzmq cffi
 # $ pip install posix_ipc
 
+# Also this was only tested in python 2.7
+
 
 _ffi = cffi.FFI()
 _ffi.cdef("""
@@ -16,10 +18,10 @@ void *mmap(void *, size_t, int, int, int, size_t);
 _lib = _ffi.dlopen(None)
 
 
-def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0, fd=0, offset=0):
+def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
     m = _lib.mmap(addr, length, prot, flags, fd, offset)
-    if m == -1:
-        raise OSError("could not mmap")
+    if m == _ffi.cast('void *', -1):
+        raise OSError(_ffi.errno, "for mmap")
     return _ffi.buffer(m, length)
 
 
@@ -46,7 +48,8 @@ class Controller(object):
     def send_mb(self, arrays):
         # The buffer protocol only works on contiguous arrays
         arrays = [numpy.ascontiguousarray(array) for array in arrays]
-        headers = [header_data_from_array_1_0(array) for array in arrays]
+        headers = [numpy.lib.format.header_data_from_array_1_0(array)
+                   for array in arrays]
         self.asocket.send_json(headers, zmq.SNDMORE)
         for array in arrays[:-1]:
             self.asocket.send(array, zmq.SNDMORE)
@@ -79,6 +82,12 @@ class Worker(object):
         This should be the same number as the port for the Controller
     hwm : int
         High water mark (see pyzmq docs).
+
+    Attributes
+    ----------
+    params : list of ndarrays
+        This will have numpy ndarray in the same order as params_descr.
+        These arrays are backed by shared memory.
     """
     def __init__(self, job_name, params_descr, port, hwm=10):
         context = zmq.Context()
@@ -92,22 +101,22 @@ class Worker(object):
         self._shmref = posix_ipc.SharedMemory(job_name+'params',
                                               posix_ipc.O_CREAT,
                                               size=params_size)
-        f = os.fd
-        self._shm = mmap.mmap(self._shmref.fd, params_size)
+        self._shm = _mmap(self._shmref.fd, params_size)
         self._shmref.close_fd()
         self.params = []
-        s = 0
-        e = 0
+        off = 0
         for dtype, shape in params_descr:
-            e += descr_size(dtype, shape)
-            
+            self.params.append(numpy.ndarray(shape, dtype=dtype,
+                                             buffer=self._shm, offset=off))
+            off += descr_size(dtype, shape)
 
     def recv_mb(self):
         headers = self.asocket.recv_json()
         arrays = []
         for header in headers:
-            data = socket.recv()
-            buf = buffer_(data)
+            data = self.asocket.recv()
+            # TODO: do we really need to call memoryview here?
+            buf = memoryview(data)
             array = numpy.frombuffer(buf, dtype=numpy.dtype(header['descr']))
             array.shape = header['shape']
             if header['fortran_order']:
