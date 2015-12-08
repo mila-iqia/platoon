@@ -1,3 +1,4 @@
+from threading import Thread
 import numpy
 import cffi
 
@@ -36,14 +37,22 @@ class Controller(object):
     ----------
     port : int
         The port number to communicate over
+    cport : int
+        The control port number.
     hwm : int
         High water mark (see pyzmq docs).
+
     """
-    def __init__(self, port, hwm=10):
+    def __init__(self, port, cport, hwm=10):
         context = zmq.Context()
         self.asocket = context.socket(zmq.PUSH)
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
+        self.csocket = context.socket(zmq.REP)
+        self.csocket.bind('tcp://*:{}'.format(cport))
+        self._req_map = dict(ping=lambda: 'pong')
+        self.t = Thread(target=self._handle_control, daemon=True)
+        self.t.start()
 
     def send_mb(self, arrays):
         # The buffer protocol only works on contiguous arrays
@@ -54,6 +63,29 @@ class Controller(object):
         for array in arrays[:-1]:
             self.asocket.send(array, zmq.SNDMORE)
         self.asocket.send(arrays[-1])
+
+    def register_control(self, req, fn):
+        """
+        Register a new control message and its associated handler.
+
+        Parameters
+        ----------
+        req : str
+            The request string
+        fn : callable
+            The handler (callable with no arguments)
+
+        """
+        self.req_map[req] = fn
+
+    def _handle_control(self):
+        while True:
+            req = self.recv()
+            if req not in self._req_map:
+                self.send('error!')
+            else:
+                resp = self._req_map[req]()
+                self.send(resp)
 
 
 def descr_size(dtype, shape):
@@ -80,6 +112,8 @@ class Worker(object):
         viewing arrays.
     port : int
         This should be the same number as the port for the Controller
+    cport : int
+        Control port number from the controller.
     hwm : int
         High water mark (see pyzmq docs).
 
@@ -89,11 +123,13 @@ class Worker(object):
         This will have numpy ndarray in the same order as params_descr.
         These arrays are backed by shared memory.
     """
-    def __init__(self, job_name, params_descr, port, hwm=10):
+    def __init__(self, job_name, params_descr, port, cport, hwm=10):
         context = zmq.Context()
         self.asocket = context.socket(zmq.PULL)
         self.asocket.set_hwm(hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
+        self.csocket = context.socket(zmq.REQ)
+        self.csocket.connect('tcp://localhost:{}'.format(cport))
 
         self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
                                         initial_value=1)
@@ -111,6 +147,17 @@ class Worker(object):
             off += descr_size(dtype, shape)
 
     def recv_mb(self):
+        """
+        Recieve a minibatch for processing.
+
+        A minibatch is composed of a number of numpy arrays.
+
+        Returns
+        -------
+        list
+            The list of numpy arrays for the minibatch
+
+        """
         headers = self.asocket.recv_json()
         arrays = []
         for header in headers:
@@ -126,7 +173,43 @@ class Worker(object):
         return arrays
 
     def lock_params(self):
+        """
+        Lock the shared params across all workers.
+
+        This is advisory and does not prevent concurrent access.
+        """
         self.lock.aquire()
 
     def unlock_params(self):
+        """
+        Unlock the shared params across all workers.
+
+        The current implementation does not ensure that the process
+        that locked the params is the one that unlocks them.  It also
+        does not prevent one process from unlocking more than once
+        (which will allow more than one process to hold the lock).
+
+        Make sure you follow proper lock/unlock logic in your program
+        to avoid these problems.
+        """
         self.lock.release()
+
+    def send_req(self, req):
+        """
+        Send a control request.
+
+        Parameters
+        ----------
+        req : str
+            The control request id.
+
+        Returns
+        -------
+        str
+            The control response.  'error!' indicates that there was a
+            server error.  The meaning of other strings is
+            request-dependant.
+
+        """
+        self.csocket.send(req)
+        return self.csocket.recv()
