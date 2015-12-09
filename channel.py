@@ -72,7 +72,7 @@ class Lieutenant(object):
         while True:
             req = self.csocket.recv()
             rep = self.handle_control(json.loads(req))
-            self.csocket.send(json.dumps(res))
+            self.csocket.send(json.dumps(rep))
 
 
 def descr_size(dtype, shape):
@@ -127,7 +127,7 @@ class Soldier(object):
 
     def init_control_sock(self, port):
         self.csocket = self.context.socket(zmq.REQ)
-        self.csocket.connect('tcp://localhost:{}'.format(cport))
+        self.csocket.connect('tcp://localhost:{}'.format(port))
 
 
     def init_shared_params(self, job_name, params_descr):
@@ -210,5 +210,5 @@ class Soldier(object):
             Json-decoded object
 
         """
-        self.csocket.send(json.dumps(d))
+        self.csocket.send(json.dumps(req))
         return json.loads(self.csocket.recv())
