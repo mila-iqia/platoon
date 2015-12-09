@@ -1,7 +1,8 @@
 from threading import Thread
 import numpy
-import cffi
+import json
 
+import cffi
 import zmq
 import posix_ipc
 
@@ -26,7 +27,7 @@ def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
     return _ffi.buffer(m, length)
 
 
-class Controller(object):
+class Lieutenant(object):
     """
     Controller object
 
@@ -50,7 +51,6 @@ class Controller(object):
         self.asocket.bind('tcp://*:{}'.format(port))
         self.csocket = context.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(cport))
-        self._req_map = dict(ping=lambda: 'pong')
         self.t = Thread(target=self._handle_control, daemon=True)
         self.t.start()
 
@@ -64,28 +64,14 @@ class Controller(object):
             self.asocket.send(array, zmq.SNDMORE)
         self.asocket.send(arrays[-1])
 
-    def register_control(self, req, fn):
-        """
-        Register a new control message and its associated handler.
-
-        Parameters
-        ----------
-        req : str
-            The request string
-        fn : callable
-            The handler (callable with no arguments)
-
-        """
-        self.req_map[req] = fn
+    def handle_control(self, req):
+        return 'error! override handle_control on the Lieutenant.'
 
     def _handle_control(self):
         while True:
-            req = self.recv()
-            if req not in self._req_map:
-                self.send('error!')
-            else:
-                resp = self._req_map[req]()
-                self.send(resp)
+            req = self.csocket.recv()
+            rep = self.handle_control(json.loads(req))
+            self.csocket.send(json.dumps(res))
 
 
 def descr_size(dtype, shape):
@@ -95,7 +81,7 @@ def descr_size(dtype, shape):
     return s
 
 
-class Worker(object):
+class Soldier(object):
     """
     Worker object
 
@@ -123,14 +109,27 @@ class Worker(object):
         This will have numpy ndarray in the same order as params_descr.
         These arrays are backed by shared memory.
     """
-    def __init__(self, job_name, params_descr, port, cport, hwm=10):
-        context = zmq.Context()
+    def __init__(self, job_name=None, params_descr=None,
+                 port=None, cport=None, hwm=10):
+        self.context = zmq.Context()
+        if port:
+            self.init_mb_sock(port, hwm)
+        if cport:
+            self.init_control_sock(cport)
+        if job_name and params_descr:
+            self.init_shared_params(job_name, params_descr)
+
+    def init_mb_sock(self, port, hwm=10):
         self.asocket = context.socket(zmq.PULL)
         self.asocket.set_hwm(hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
+
+    def init_control_sock(self, port):
         self.csocket = context.socket(zmq.REQ)
         self.csocket.connect('tcp://localhost:{}'.format(cport))
 
+
+    def init_shared_params(self, job_name, params_descr):
         self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
                                         initial_value=1)
         params_size = sum(descr_size(*d) for d in params_descr)
@@ -200,16 +199,15 @@ class Worker(object):
 
         Parameters
         ----------
-        req : str
-            The control request id.
+        req : object
+            This is a json-encodable object that will be sent to the
+            lieutenant.
 
         Returns
         -------
-        str
-            The control response.  'error!' indicates that there was a
-            server error.  The meaning of other strings is
-            request-dependant.
+        object
+            Json-decoded object
 
         """
-        self.csocket.send(req)
-        return self.csocket.recv()
+        self.csocket.send(json.dumps(d))
+        return json.loads(self.csocket.recv())
