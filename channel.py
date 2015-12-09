@@ -51,7 +51,8 @@ class Lieutenant(object):
         self.asocket.bind('tcp://*:{}'.format(port))
         self.csocket = context.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(cport))
-        self.t = Thread(target=self._handle_control, daemon=True)
+        self.t = Thread(target=self._handle_control)
+        self.t.daemon = True
         self.t.start()
 
     def send_mb(self, arrays):
