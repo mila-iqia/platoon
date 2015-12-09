@@ -121,12 +121,12 @@ class Soldier(object):
             self.init_shared_params(job_name, params_descr)
 
     def init_mb_sock(self, port, hwm=10):
-        self.asocket = context.socket(zmq.PULL)
+        self.asocket = self.context.socket(zmq.PULL)
         self.asocket.set_hwm(hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
 
     def init_control_sock(self, port):
-        self.csocket = context.socket(zmq.REQ)
+        self.csocket = self.context.socket(zmq.REQ)
         self.csocket.connect('tcp://localhost:{}'.format(cport))
 
 
