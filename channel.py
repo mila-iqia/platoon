@@ -130,10 +130,15 @@ class Soldier(object):
         self.csocket.connect('tcp://localhost:{}'.format(port))
 
 
-    def init_shared_params(self, job_name, params_descr):
+    def init_shared_params(self, job_name, params_descr, cleanup=False):
         self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
                                         initial_value=1)
         params_size = sum(descr_size(*d) for d in params_descr)
+        if cleanup:
+            try:
+                posix_ipc.unlink_shared_memory(job_name+'params')
+            except posix_ipc.ExistentialError:
+                pass
         self._shmref = posix_ipc.SharedMemory(job_name+'params',
                                               posix_ipc.O_CREAT,
                                               size=params_size)
