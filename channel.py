@@ -196,6 +196,18 @@ class Soldier(object):
         to avoid these problems.
         """
         self.lock.release()
+        
+    def sync_params(self, params, update_rule, synchronous=True):
+        """
+        Update the worker's parameters and the central parameters according
+        to the provided parameter update rule.
+        """
+        if synchronous:
+            self.lock_params()
+        new_worker_params = update_rule.update_params(params, self.params)
+        if synchronous:
+            self.unlock_params()
+        return new_worker_params
 
     def send_req(self, req):
         """
