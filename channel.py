@@ -161,9 +161,7 @@ class Soldier(object):
         headers = self.asocket.recv_json()
         arrays = []
         for header in headers:
-            data = self.asocket.recv()
-            # TODO: do we really need to call memoryview here?
-            buf = memoryview(data)
+            buf = self.asocket.recv()
             array = numpy.frombuffer(buf, dtype=numpy.dtype(header['descr']))
             array.shape = header['shape']
             if header['fortran_order']:
