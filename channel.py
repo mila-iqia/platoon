@@ -79,7 +79,7 @@ def descr_size(dtype, shape):
     size = dtype.itemsize
     for s in shape:
         size *= s
-    return s
+    return size
 
 
 class Soldier(object):
@@ -137,7 +137,7 @@ class Soldier(object):
         self._shmref = posix_ipc.SharedMemory(job_name+'params',
                                               posix_ipc.O_CREAT,
                                               size=params_size)
-        self._shm = _mmap(self._shmref.fd, params_size)
+        self._shm = _mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.params = []
         off = 0
