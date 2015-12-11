@@ -133,18 +133,26 @@ class Soldier(object):
                            cleanup=False):
         self.local_params = params
         self.param_sync_rule = param_sync_rule
+        if cleanup:
+            try:
+                posix_ipc.unlink_semaphore(job_name+'lock')
+            except posix_ipc.ExistentialError:
+                pass
         self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
                                         initial_value=1)
-        params_descr = [(p.dtype, p.get_value().shape) for p in params]
+
+        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape)
+                        for p in params]
         params_size = sum(descr_size(*d) for d in params_descr)
         if cleanup:
             try:
                 posix_ipc.unlink_shared_memory(job_name+'params')
             except posix_ipc.ExistentialError:
                 pass
-        self._shmref = posix_ipc.SharedMemory(job_name+'params',
-                                              posix_ipc.O_CREAT,
-                                              size=params_size)
+            self._shmref = posix_ipc.SharedMemory(job_name+'params',
+                                                  posix_ipc.O_CREAT,
+                                                  size=params_size)
+        self._shmref = posix_ipc.SharedMemory(job_name+'params')
         self._shm = _mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []
@@ -185,7 +193,7 @@ class Soldier(object):
 
         This is advisory and does not prevent concurrent access.
         """
-        self.lock.aquire()
+        self.lock.acquire()
 
     def unlock_params(self):
         """
@@ -213,7 +221,7 @@ class Soldier(object):
         # shared parameters and write back the new values of the local
         # parameters
         local_param_values = [p.get_value() for p in self.local_params]
-        self.param_sync_rule.update_params(self.local_param_values,
+        self.param_sync_rule.update_params(local_param_values,
                                            self.shared_params)        
         for param, value in zip(self.local_params, local_param_values):
             param.set_value(value)
