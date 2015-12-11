@@ -129,10 +129,13 @@ class Soldier(object):
         self.csocket = self.context.socket(zmq.REQ)
         self.csocket.connect('tcp://localhost:{}'.format(port))
 
-
-    def init_shared_params(self, job_name, params_descr, cleanup=False):
+    def init_shared_params(self, job_name, params, param_sync_rule,
+                           cleanup=False):
+        self.local_params = params
+        self.param_sync_rule = param_sync_rule
         self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
                                         initial_value=1)
+        params_descr = [(p.dtype, p.get_value().shape) for p in params]
         params_size = sum(descr_size(*d) for d in params_descr)
         if cleanup:
             try:
@@ -144,11 +147,12 @@ class Soldier(object):
                                               size=params_size)
         self._shm = _mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
-        self.params = []
+        self.shared_params = []
         off = 0
         for dtype, shape in params_descr:
-            self.params.append(numpy.ndarray(shape, dtype=dtype,
-                                             buffer=self._shm, offset=off))
+            self.shared_params.append(numpy.ndarray(shape, dtype=dtype,
+                                                    buffer=self._shm,
+                                                    offset=off))
             off += descr_size(dtype, shape)
 
     def recv_mb(self):
@@ -196,6 +200,26 @@ class Soldier(object):
         to avoid these problems.
         """
         self.lock.release()
+        
+    def sync_params(self, synchronous=True):
+        """
+        Update the worker's parameters and the central parameters according
+        to the provided parameter update rule.
+        """
+        if synchronous:
+            self.lock_params()
+        
+        # Read the values of the local parameters, update them and the
+        # shared parameters and write back the new values of the local
+        # parameters
+        local_param_values = [p.get_value() for p in self.local_params]
+        self.param_sync_rule.update_params(self.local_param_values,
+                                           self.shared_params)        
+        for param, value in zip(self.local_params, local_param_values):
+            param.set_value(value)
+        
+        if synchronous:
+            self.unlock_params()
 
     def send_req(self, req):
         """
