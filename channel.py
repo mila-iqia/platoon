@@ -166,12 +166,12 @@ class Soldier(object):
         headers = self.asocket.recv_json()
         arrays = []
         for header in headers:
-            buf = self.asocket.recv()
-            array = numpy.frombuffer(buf, dtype=numpy.dtype(header['descr']))
-            array.shape = header['shape']
-            if header['fortran_order']:
-                array.shape = header['shape'][::-1]
-                array = array.transpose()
+            data = self.asocket.recv(copy=False)
+            buf = buffer(data)
+            array = numpy.ndarray(
+                buffer=buf, shape=header['shape'],
+                dtype=numpy.dtype(header['descr']),
+                order='F' if header['fortran_order'] else 'C')
             arrays.append(array)
         return arrays
 
