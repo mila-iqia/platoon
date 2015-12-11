@@ -1,6 +1,7 @@
 class ParamSyncRule:
-    def update_params(self, worker_params, master_params):
-        """ Perform an inplace update of the worker parameters and the central
+    def update_params(self, local_params, master_params):
+        """
+        Perform an inplace update of the master parameters and returns the 
         parameters based on a certain parameter synchronisation rule.
         """
         raise NotImplementedError()
@@ -16,11 +17,14 @@ class EASGD(ParamSyncRule):
     def set_alpha(self, alpha):
         self.alpha = alpha
         
-    def update_params(self, worker_params, master_params):
-        """ Perform an inplace update of the worker parameters and the central
+    def update_params(self, local_params, master_params):
+        """
+        Perform an inplace update of the worker parameters and the central
         parameters based on a certain parameter synchronisation rule.
         """
-        for p, p_tilde in zip(worker_params, master_params):
-            diff = self.alpha * (p - p_tilde)
-            p -= diff
-            p_tilde += diff
+        for p_local, p_master in zip(local_params, master_params):
+            diff = self.alpha * (p_local - p_master)
+            
+            # The -= and += operations are inplace for nupy arrays
+            p_local -= diff
+            p_master += diff
