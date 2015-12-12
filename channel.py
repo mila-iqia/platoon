@@ -45,11 +45,12 @@ class Lieutenant(object):
 
     """
     def __init__(self, port, cport, hwm=10):
-        context = zmq.Context()
-        self.asocket = context.socket(zmq.PUSH)
+        acontext = zmq.Context()
+        self.asocket = acontext.socket(zmq.PUSH)
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
-        self.csocket = context.socket(zmq.REP)
+        ccontext = zmq.Context()
+        self.csocket = ccontext.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(cport))
 
     def send_mb(self, arrays):
