@@ -44,14 +44,22 @@ class Lieutenant(object):
         High water mark (see pyzmq docs).
 
     """
-    def __init__(self, port, cport, hwm=10):
+    def __init__(self, port=None, cport=None, hwm=10):
+        if port:
+            self.init_data(port, hwm)
+        if cport:
+            self.init_control(cport)
+
+    def init_data(self, port, hwm=10):
         acontext = zmq.Context()
         self.asocket = acontext.socket(zmq.PUSH)
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
+
+    def init_control(self, port):
         ccontext = zmq.Context()
         self.csocket = ccontext.socket(zmq.REP)
-        self.csocket.bind('tcp://*:{}'.format(cport))
+        self.csocket.bind('tcp://*:{}'.format(port))
 
     def send_mb(self, arrays):
         # The buffer protocol only works on contiguous arrays
