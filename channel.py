@@ -51,9 +51,6 @@ class Lieutenant(object):
         self.asocket.bind('tcp://*:{}'.format(port))
         self.csocket = context.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(cport))
-        self.t = Thread(target=self._handle_control)
-        self.t.daemon = True
-        self.t.start()
 
     def send_mb(self, arrays):
         # The buffer protocol only works on contiguous arrays
@@ -68,7 +65,7 @@ class Lieutenant(object):
     def handle_control(self, req):
         return 'error! override handle_control on the Lieutenant.'
 
-    def _handle_control(self):
+    def serve(self):
         while True:
             req = self.csocket.recv()
             rep = self.handle_control(json.loads(req))
