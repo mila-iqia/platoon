@@ -449,31 +449,48 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
 
 def train_lstm(
     dim_proj=1024,  # word embeding dimension and LSTM number of hidden units.
-    dispFreq=10,  # Display to stdout the training progress every N updates
+    train_len=10,  # Train for this many minibatches when requested
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
     lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
+    n_words=10000,  # Vocabulary size
     optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
+    maxlen=100,  # Sequence longer then this get ignored
+    batch_size=16,  # The batch size during training.
+    valid_batch_size=64,  # The batch size used for validation/test set.
+    dataset='imdb',
 
     # Parameter for extra option
     noise_std=0.,
     use_dropout=True,  # if False slightly faster, but worst test error
                        # This frequently need a bigger model.
     reload_model=None,  # Path to a saved model we want to start from.
-    valid_batch_size=64,
-    n_words=10000,
-    maxlen=100,
-    mode='init',
+    test_size=-1, # If >0, we keep only this number of test example.
+    mode='client',
 ):
 
-    s = channel.Soldier(port=5566, cport=5567)
+    s = channel.Soldier(cport=5567)
 
     # Model options
     model_options = locals().copy()
     print "model options", model_options
 
-    ydim = int(s.send_req('ydim'))
+    load_data, prepare_data = get_dataset('imdb')
+
+    print 'Loading data'
+    train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
+                                   maxlen=maxlen)
+    if test_size > 0:
+        # The test set is sorted by size, but we want to keep random
+        # size example.  So we must select a random selection of the
+        # examples.
+        idx = numpy.arange(len(test[0]))
+        numpy.random.shuffle(idx)
+        idx = idx[:test_size]
+        test = ([test[0][n] for n in idx], [test[1][n] for n in idx])
+
+    ydim = numpy.max(train[1]) + 1
 
     model_options['ydim'] = ydim
 
@@ -492,7 +509,7 @@ def train_lstm(
     tparams = init_tparams(params)
 
     s.init_shared_params('DLTlstm', tparams.values(),
-                         param_sync_rule=EASGD(0.4),
+                         param_sync_rule=EASGD(0.5),
                          cleanup=(mode == 'init'))
     print "Params init done"
 
@@ -521,13 +538,19 @@ def train_lstm(
 
     print 'Optimization'
 
-    load_data, prepare_data = get_dataset('imdb')
-    train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
-                                   maxlen=maxlen)
-    del train
-
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size)
     kf_test = get_minibatches_idx(len(test[0]), valid_batch_size)
+
+
+    def train_iter():
+        kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=True)
+        for _, train_index in kf:
+            y = [train[1][t] for t in train_index]
+            x = [train[0][t] for t in train_index]
+            x, mask, y = prepare_data(x, y)
+            yield x, mask, y
+
+    train_it = train_iter()
 
     best_p = None
 
@@ -536,13 +559,12 @@ def train_lstm(
         print step
         if step == 'train':
             use_noise.set_value(numpy_floatX(1.))
-            for i in xrange(10):
-                x, mask, y = s.recv_mb()
-
+            for i in xrange(train_len):
+                x, mask, y = next(train_it)
                 cost = f_grad_shared(x, mask, y)
-                print "Train cost", cost
                 f_update(lrate)
-            s.send_req(dict(done=10))
+            print 'Train cost:', cost
+            s.send_req(dict(done=train_len))
             print "Syncing with global params"
             s.sync_params(synchronous=True)
 
