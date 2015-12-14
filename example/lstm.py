@@ -543,12 +543,13 @@ def train_lstm(
 
 
     def train_iter():
-        kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=True)
-        for _, train_index in kf:
-            y = [train[1][t] for t in train_index]
-            x = [train[0][t] for t in train_index]
-            x, mask, y = prepare_data(x, y)
-            yield x, mask, y
+        while True:
+            kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=True)
+            for _, train_index in kf:
+                y = [train[1][t] for t in train_index]
+                x = [train[0][t] for t in train_index]
+                x, mask, y = prepare_data(x, y)
+                yield x, mask, y
 
     train_it = train_iter()
 

@@ -7,11 +7,12 @@ import channel
 
 
 class LSTMLieutenant(channel.Lieutenant):
-    def __init__(self, max_mb, patience):
+    def __init__(self, max_mb, patience, validFreq):
         channel.Lieutenant.__init__(self)
         self.patience = patience
-        self.max_mb
+        self.max_mb = int(max_mb)
 
+        self.validFreq = validFreq
         self.uidx = 0
         self.eidx = 0
         self.history_errs = []
@@ -39,7 +40,7 @@ class LSTMLieutenant(channel.Lieutenant):
                     self.stop_time = time.time()
                     print "Training time (max_mb)  %fs" % (self.stop_time - self.start_time,)
                     return 'stop'
-                if numpy.mod(self.uidx, validFreq) == 0:
+                if numpy.mod(self.uidx, self.validFreq) == 0:
                     self.valid = True
             if 'valid_err' in req:
                 valid_err = req['valid_err']
@@ -68,7 +69,8 @@ def lstm_control(dataset='imdb',
                  ):
 
     # TODO: have a better way to set max_mb
-    l = LSTMLieutenant(max_mb=(5000*1998)/10, patience=patience)
+    l = LSTMLieutenant(max_mb=(5000*1998)/10, patience=patience,
+                       validFreq=validFreq)
 
     l.init_control(port=5567)
     print "Lieutenant is ready"
