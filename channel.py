@@ -29,10 +29,18 @@ def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
 
 class Lieutenant(object):
     """
-    Controller object
+    Lieutenant object
 
-    This may be badly named because it only handles sending
-    minibatches to the worker processes.
+    This can handle sending minibatches and control requests.
+
+    .. warning::
+
+        Due to the underlying implementation it is a bad idea to
+        attempt to do both in the same process, even on different
+        threads.  This will suffer from interlock problems and may
+        negate any speedup you could get from using multiple soldiers.
+
+        Because of this issue, the class may be split in the future.
 
     Parameters
     ----------
@@ -51,17 +59,54 @@ class Lieutenant(object):
             self.init_control(cport)
 
     def init_data(self, port, hwm=10):
+        """
+        Initialize the minibatch socket.
+
+        This must be called before using :meth:`send_mb`.
+
+        Parameters
+        ----------
+        port : int
+            The port to listen on.
+        hwm : int
+            High water mark, see the pyzmq docs.
+
+        """
         acontext = zmq.Context()
         self.asocket = acontext.socket(zmq.PUSH)
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
 
     def init_control(self, port):
+        """
+        Initialize the control socket.
+
+        This must be called before using :meth:`serve`.
+
+        Parameters
+        ----------
+        port : int
+            The port to listen on.
+
+        """
         ccontext = zmq.Context()
         self.csocket = ccontext.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(port))
 
     def send_mb(self, arrays):
+        """
+        Send a minibatch over the socket.
+
+        This function may block if arrays are being sent faster than
+        the clients can handle.
+
+        Parameters
+        ----------
+        arrays : list of ndarrays
+            List of numpy.ndarray to send.  All arrays should be
+            contiguous for better performance.
+
+        """
         # The buffer protocol only works on contiguous arrays
         arrays = [numpy.ascontiguousarray(array) for array in arrays]
         headers = [numpy.lib.format.header_data_from_array_1_0(array)
@@ -72,9 +117,22 @@ class Lieutenant(object):
         self.asocket.send(arrays[-1])
 
     def handle_control(self, req):
+        """
+        Reimplement or assign a handler to this function to do
+        something with control messages.
+
+        The replacement get one parameter which is the request and
+        shoud return the response which must be a json-encodable
+        object.  Other code is responsible for handling decoding,
+        enconding and the network.
+
+        """
         return 'error! override handle_control on the Lieutenant.'
 
     def serve(self):
+        """
+        This method will loop forever handling control messages.
+        """
         while True:
             req = self.csocket.recv()
             rep = self.handle_control(json.loads(req))
@@ -90,23 +148,19 @@ def descr_size(dtype, shape):
 
 class Soldier(object):
     """
-    Worker object
+    Soldier object
 
-    Each worker should have one instance of this object.
+    Each soldier should have one instance of this object.  The
+    individual featuers (control channel, minibatch channel, shared
+    params) are all independant and optional so you don't have to use
+    all of them.
 
     Parameters
     ----------
-    job_name : str
-        Some name that is the same for all workers in the same job.
-        This should differ from other jobs on the same machine.
-    params_descr : list of (dtype, shape)
-        Describes the paramters for the job.  This is required for the
-        total size and the mapping between the shared memory and the
-        viewing arrays.
-    port : int
-        This should be the same number as the port for the Controller
+    port : int, optional
+        Will call :meth:`init_mb_sock` with this port.
     cport : int
-        Control port number from the controller.
+        Will call :meth:`init_control_sock` with this port.
     hwm : int
         High water mark (see pyzmq docs).
 
@@ -115,28 +169,73 @@ class Soldier(object):
     params : list of ndarrays
         This will have numpy ndarray in the same order as params_descr.
         These arrays are backed by shared memory.
+
     """
-    def __init__(self, job_name=None, params_descr=None,
-                 port=None, cport=None, hwm=10):
+    def __init__(self, port=None, cport=None, hwm=10):
         self.context = zmq.Context()
         if port:
             self.init_mb_sock(port, hwm)
         if cport:
             self.init_control_sock(cport)
-        if job_name and params_descr:
-            self.init_shared_params(job_name, params_descr)
 
     def init_mb_sock(self, port, hwm=10):
+        """
+        Initialize the minibatch socket.
+
+        This must be called before using :meth:`recv_mb`.
+
+        Parameters
+        ----------
+        port : int
+            The port to reach the minibatch server on.
+        hwm : int
+            High water mark, see pyzmq docs.
+
+        """
         self.asocket = self.context.socket(zmq.PULL)
         self.asocket.set_hwm(hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
 
     def init_control_sock(self, port):
+        """
+        Intialize control socket.
+
+        This must be called before using :meth:`send_req`.
+
+        Paramters
+        ---------
+        port : int
+            Port where the control master is listening on.
+
+        """
         self.csocket = self.context.socket(zmq.REQ)
         self.csocket.connect('tcp://localhost:{}'.format(port))
 
     def init_shared_params(self, job_name, params, param_sync_rule,
                            cleanup=False):
+        """
+        Intialize shared memory parameters.
+
+        This must be called before accessing the params attribute
+        and/or calling :meth:`sync_params`, :meth:`lock_params` or
+        :meth:`unlock_params`.
+
+        Paramters
+        ---------
+        job_name : str
+            An identifier.  This must be the same across all soldiers
+            that share paramters.
+        params : shared variables
+            Theano shared variables representing the weights of your model.
+        param_sync_rule : ParamSyncRule
+            Update rule for the parameters
+        cleanup : bool
+            Whether to cleanup a previous run with the same
+            identifier.  Will also copy the current values of `params`
+            to the shared memory.  This is required on certain
+            platform due to system restrictions.
+
+        """
         self.local_params = params
         self.param_sync_rule = param_sync_rule
         if cleanup:
@@ -193,13 +292,21 @@ class Soldier(object):
             arrays.append(array)
         return arrays
 
-    def lock_params(self):
+    def lock_params(self, timeout=None):
         """
         Lock the shared params across all workers.
 
         This is advisory and does not prevent concurrent access.
+
+        Parameters
+        ----------
+        timeout : int
+            Amount of time to wait for the lock to be available.  A
+            timeout of 0 will raise an error immediatly if the lock is
+            not available.
+
         """
-        self.lock.acquire()
+        self.lock.acquire(timeout=timeout)
 
     def unlock_params(self):
         """
@@ -219,6 +326,13 @@ class Soldier(object):
         """
         Update the worker's parameters and the central parameters according
         to the provided parameter update rule.
+
+        Parameters
+        ----------
+        synchronous : bool
+            If false, the lock won't be acquired before touching the
+            shared weights.
+
         """
         if synchronous:
             self.lock_params()
