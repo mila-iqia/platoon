@@ -39,6 +39,7 @@ class LSTMLieutenant(channel.Lieutenant):
                     self.stop = True
                     self.stop_time = time.time()
                     print "Training time (max_mb)  %fs" % (self.stop_time - self.start_time,)
+                    print "Number of samples", self.uidx
                     return 'stop'
                 if numpy.mod(self.uidx, self.validFreq) == 0:
                     self.valid = True
@@ -57,6 +58,7 @@ class LSTMLieutenant(channel.Lieutenant):
                     if self.bad_counter > self.patience:
                         self.stop_time = time.time()
                         print "Training time (patience) %fs" % (self.stop_time - self.start_time,)
+                        print "Number of samples:", self.uidx
                         self.stop = True
                         return 'stop'
 

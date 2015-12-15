@@ -630,5 +630,6 @@ def train_lstm(
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     train_lstm(
-        mode=sys.argv[1]
+        mode=sys.argv[1],
+        test_size=500,
     )
