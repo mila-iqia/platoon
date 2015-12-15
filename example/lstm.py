@@ -449,7 +449,11 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
 
 def train_lstm(
     dim_proj=1024,  # word embeding dimension and LSTM number of hidden units.
+
+    # This value is suggested as being good in the EASGD paper, but
+    # you may want to tune this
     train_len=10,  # Train for this many minibatches when requested
+
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
     lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
     n_words=10000,  # Vocabulary size
