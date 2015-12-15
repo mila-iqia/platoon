@@ -306,7 +306,7 @@ class Soldier(object):
             not available.
 
         """
-        self.lock.acquire(timeout=timeout)
+        self.lock.acquire(timeout)
 
     def unlock_params(self):
         """
