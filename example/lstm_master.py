@@ -8,11 +8,11 @@ class LSTMLieutenant(channel.Lieutenant):
     """
     This multi-process controller implements patience-based early-stopping SGD
     """
-    
+
     def __init__(self, max_mb, patience, validFreq):
         """
         Initialize the LSTMLieutenant
-        
+
         Parameters
         ----------
         max_mb : int
@@ -41,11 +41,11 @@ class LSTMLieutenant(channel.Lieutenant):
     def handle_control(self, req):
         """
         Handles a control_request received from a worker
-        
+
         Parameters
         ----------
         req : str or dict
-            Control request received from a worker. 
+            Control request received from a worker.
             The control request can be one of the following
             1) "next" : request by a worker to be informed of its next action
                to perform. The answers from the server can be 'train' (the
@@ -63,7 +63,7 @@ class LSTMLieutenant(channel.Lieutenant):
                 validation error so far, otherwise it will respond 'stop' if
                 the patience has been exceeded.
         """
-        
+
         if req == 'next':
             if self.start_time is None:
                 self.start_time = time.time()
