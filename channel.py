@@ -155,7 +155,7 @@ def descr_size(dtype, shape):
 class Soldier(object):
     """
     Soldier object. Each worker should have one instance of this class.
-    
+
     This class handles the communication/synchronization with other processes.
     The features to do so (control channel, minibatch channel and shared
     parameters) are all independant and optional so you don't have to use all
