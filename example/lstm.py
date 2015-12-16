@@ -10,10 +10,7 @@ from theano import config
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-import sys
-import os
 sys.path.append('..')
-
 import imdb
 import channel
 from param_sync import EASGD
@@ -470,7 +467,7 @@ def train_lstm(
     use_dropout=True,  # if False slightly faster, but worst test error
                        # This frequently need a bigger model.
     reload_model=None,  # Path to a saved model we want to start from.
-    test_size=-1, # If >0, we keep only this number of test example.
+    test_size=-1,  # If >0, we keep only this number of test example.
     mode='client',
 ):
 
@@ -518,7 +515,8 @@ def train_lstm(
     print "Params init done"
 
     if mode == 'test':
-        import pdb; pdb.set_trace()
+        import pdb
+        pdb.set_trace()
 
     # use_noise is for dropout
     (use_noise, x, mask,
@@ -544,7 +542,6 @@ def train_lstm(
 
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size)
     kf_test = get_minibatches_idx(len(test[0]), valid_batch_size)
-
 
     def train_iter():
         while True:
