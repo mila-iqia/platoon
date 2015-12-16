@@ -1,4 +1,11 @@
 class ParamSyncRule:
+    """
+    Abstract parameter synchronisation rule.
+
+    This abstract class defines the interface that should be followed by
+    implementations of parameter synchronization rules for distributed
+    training.
+    """
 
     def update_params(self, local_params, master_params):
         """
@@ -9,6 +16,16 @@ class ParamSyncRule:
 
 
 class EASGD(ParamSyncRule):
+    """
+    Implementation of the EASGD parameter sync rule.
+
+    According to this rule, every N iterations, a worker synchronises his
+    parameters with the master parameters. This is done by moving each set of
+    parameters toward the other by an amount proportional to the difference
+    between the individual params (this proportion is parametrized by `alpha`).
+
+    This parameter sync rule is described in http://arxiv.org/abs/1412.6651
+    """
 
     def __init__(self, alpha):
         self.set_alpha(alpha)
