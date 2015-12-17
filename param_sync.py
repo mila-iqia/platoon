@@ -24,6 +24,11 @@ class EASGD(ParamSyncRule):
     parameters toward the other by an amount proportional to the difference
     between the individual params (this proportion is parametrized by `alpha`).
 
+    The sync equations are as follow:
+    diff = w_worker - w_master
+    w_worker = alpha * (w_worker - diff)
+    w_master = alpha * (w_master + diff)
+
     This parameter sync rule is described in http://arxiv.org/abs/1412.6651
     """
 
