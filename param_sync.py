@@ -26,8 +26,8 @@ class EASGD(ParamSyncRule):
 
     The sync equations are as follow:
     diff = w_worker - w_master
-    w_worker = alpha * (w_worker - diff)
-    w_master = alpha * (w_master + diff)
+    w_worker = w_worker - alpha * diff
+    w_master = w_master + alpha * diff
 
     NOTE : if alpha=0 is used, there is no synchronization of the
     parameters meaning that each worker is independently training using SGD.
