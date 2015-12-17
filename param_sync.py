@@ -29,7 +29,11 @@ class EASGD(ParamSyncRule):
     w_worker = alpha * (w_worker - diff)
     w_master = alpha * (w_master + diff)
 
-    This parameter sync rule is described in http://arxiv.org/abs/1412.6651
+    NOTE : if alpha=0 is used, there is no synchronization of the
+    parameters meaning that each worker is independently training using SGD.
+
+    This algorithm is described in more details in the following paper:
+    http://arxiv.org/abs/1412.6651
     """
 
     def __init__(self, alpha):
