@@ -28,9 +28,12 @@ def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
 
 class Lieutenant(object):
     """
-    Lieutenant object
+    Abstract multi-process controller
 
-    This can handle sending minibatches and control requests.
+    This class provides the necessary features to dispatch data minibatches
+    to workers and handle control requests. Using this class should be done
+    by having another class inherit from it and override the method
+    `handle_control()`.
 
     .. warning::
 
@@ -127,7 +130,10 @@ class Lieutenant(object):
         enconding and the network.
 
         """
-        return 'error! override handle_control on the Lieutenant.'
+        raise NotImplementedError("The Lieutenant class should not be "
+                                  "instanciated directly. Classes that "
+                                  "inherit from Lieutenant should override "
+                                  "the method `handle_control()`")
 
     def serve(self):
         """
@@ -148,12 +154,12 @@ def descr_size(dtype, shape):
 
 class Soldier(object):
     """
-    Soldier object
+    Soldier object. Each worker should have one instance of this class.
 
-    Each soldier should have one instance of this object.  The
-    individual featuers (control channel, minibatch channel, shared
-    params) are all independant and optional so you don't have to use
-    all of them.
+    This class handles the communication/synchronization with other processes.
+    The features to do so (control channel, minibatch channel and shared
+    parameters) are all independant and optional so you don't have to use all
+    of them.
 
     Parameters
     ----------
