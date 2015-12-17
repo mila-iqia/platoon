@@ -1,4 +1,3 @@
-from threading import Thread
 import numpy
 import json
 
@@ -52,6 +51,7 @@ class Lieutenant(object):
         High water mark (see pyzmq docs).
 
     """
+
     def __init__(self, port=None, cport=None, hwm=10):
         if port:
             self.init_data(port, hwm)
@@ -171,6 +171,7 @@ class Soldier(object):
         These arrays are backed by shared memory.
 
     """
+
     def __init__(self, port=None, cport=None, hwm=10):
         self.context = zmq.Context()
         if port:
@@ -321,7 +322,7 @@ class Soldier(object):
         to avoid these problems.
         """
         self.lock.release()
-        
+
     def sync_params(self, synchronous=True):
         """
         Update the worker's parameters and the central parameters according
@@ -336,16 +337,16 @@ class Soldier(object):
         """
         if synchronous:
             self.lock_params()
-        
+
         # Read the values of the local parameters, update them and the
         # shared parameters and write back the new values of the local
         # parameters
         local_param_values = [p.get_value() for p in self.local_params]
         self.param_sync_rule.update_params(local_param_values,
-                                           self.shared_params)        
+                                           self.shared_params)
         for param, value in zip(self.local_params, local_param_values):
             param.set_value(value)
-        
+
         if synchronous:
             self.unlock_params()
 

@@ -1,12 +1,11 @@
-from multiprocessing import Process
 import numpy
 import time
 
-import lstm
 import channel
 
 
 class LSTMLieutenant(channel.Lieutenant):
+
     def __init__(self, max_mb, patience, validFreq):
         channel.Lieutenant.__init__(self)
         self.patience = patience
@@ -61,6 +60,7 @@ class LSTMLieutenant(channel.Lieutenant):
                         print "Number of samples:", self.uidx
                         self.stop = True
                         return 'stop'
+
 
 def lstm_control(dataset='imdb',
                  patience=10,
