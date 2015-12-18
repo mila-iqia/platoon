@@ -46,18 +46,19 @@ central parameters or not.
 
 2) Before entering the main loop, the script must create an instance of the
 class channel.Soldier, providing it with the same port number as used to
-initialize the lieutenant. This object will provide the necessary methods to
+initialize the lieutenant. It is not necessary to sub-class Soldier, you can
+instantiate it directly. This object will provide the necessary methods to
 handle communication with the lieutenant.
 
 3) After the model has been built and the parameters initialized,
 initialize the central parameters by calling the Soldier's
 init_shared_params() method. Every worker should call this method but only
 the first worker to be launched should provide the parameter cleanup=True,
-the other worked should pass False or provide no value for this parameter.
+the other worker should pass False or provide no value for this parameter.
 
 4) In the main loop, instead of deciding when to train and when to monitor
 performance, the worker should send control request to the Lieutenant to know
-what action is should take, according to the communication protocol
+what action it should take, according to the communication protocol
 established in the Lieutenant's 'handle_control()' method.
 
 5) In the main loop, whenever the worker has performed 'N' (a hyper-parameter)
