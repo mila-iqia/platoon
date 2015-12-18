@@ -1,5 +1,8 @@
 # platoon
-Multi-GPU mini-framework for Theano
+Experimental multi-GPU mini-framework for Theano
+
+This framework is still a prototype. It's interface is not polished and it is
+likely to undergo changes in the future.
 
 In Platoon, there are two main components : Soldiers, and Lieutenants.
 Soldiers do the bulk of the work (training, monitoring, ...). Lieutenants are
