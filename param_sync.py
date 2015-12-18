@@ -1,4 +1,4 @@
-class ParamSyncRule:
+class ParamSyncRule(object):
     """
     Abstract parameter synchronisation rule.
 
