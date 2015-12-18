@@ -19,7 +19,7 @@ Implementing a lieutenant
 -------------------------
 
 These steps describe how to implement the Python script that will launch
-your Lieutenant. In the included LSTM example, both of there steps are done
+your Lieutenant. In the included LSTM example, both of these steps are done
 in the file lstm_master.py
 
 1) Define which commands your Lieutenant can receive and how it responds to
@@ -57,7 +57,7 @@ handle communication with the lieutenant.
 initialize the central parameters by calling the Soldier's
 init_shared_params() method. Every worker should call this method but only
 the first worker to be launched should provide the parameter cleanup=True,
-the other worker should pass False or provide no value for this parameter.
+the other workers should pass False or provide no value for this parameter.
 
 4) In the main loop, instead of deciding when to train and when to monitor
 performance, the worker should send control request to the Lieutenant to know
