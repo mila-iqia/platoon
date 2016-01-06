@@ -304,6 +304,8 @@ class Worker(object):
                                                     buffer=self._shm,
                                                     offset=off))
             off += descr_size(dtype, shape)
+        self.update_fn = self.param_sync_rule.update_fn(params)
+
 
     def recv_mb(self):
         """
@@ -382,14 +384,14 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-        # Read the values of the local parameters, update them and the
-        # shared parameters and write back the new values of the local
-        # parameters
-        local_param_values = [p.get_value() for p in self.local_params]
-        self.param_sync_rule.update_params(local_param_values,
-                                           self.shared_params)
-        for param, value in zip(self.local_params, local_param_values):
-            param.set_value(value)
+        # This will compute the update and set the local params to
+        # their new value
+        new_vals = self.update_fn(self.shared_params)
+
+        # Here we copy the new values into the shared memory for the
+        # master params
+        for n, s in zip(new_vals, self.shared_params):
+            s[:] = n
 
         if synchronous:
             self.unlock_params()
