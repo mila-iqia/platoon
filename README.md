@@ -11,7 +11,7 @@ likely to undergo changes in the future.
 The framework allow multiple data-parallel algorithmes, but only
 [EASGD](http://arxiv.org/abs/1412.6651) is currently implemented.
 
-There is working examples in the examples directory.
+There are working examples in the examples directory.
 
 In Platoon, there are two main components : workers, and controllers.
 Workers do the bulk of the work (training, monitoring, ...). Controllers
@@ -32,7 +32,7 @@ training.  So the parameter alpha is constant. The number of minibatch
 is fixed as the hyper-parameter. The sync is also fixed to be after 10
 mini-batch of computation.
 
-With 1 worker, it won't train well. This isn't recomanded. This is
+With 1 worker, it won't train well. This isn't recommended. This is
 there just to show the overhead of the EASGD implementation.  Normal
 is without this framework, also there for overhead evaluation.
 
@@ -49,16 +49,17 @@ Hyper-parameters are probably dependent of the number of worker. This
 is to keep the efficient learning. At least, consider changing, the
 learning rate and the alpha parameter of EASGD.
 
-When changing the number of worker, you probably need to chagne the
+When changing the number of workers, you probably need to change the
 alpha value to keep efficient training. How to change it isn't
-clear. 0.5 for alpha with 2 workders seem to have good training efficency for
-this models/dataset/hyper-parameter combination.
+clear. 0.5 for alpha with 2 workers seem to have good training efficency for
+this model/dataset/hyper-parameter combination.
 
-Is 1/N a good guideline for alpha? 1 datapoint! 0.5 seem to work well
-for 2 worker, but not for 3 or 4 workers.
+Is 1/N a good guideline for alpha? 1 datapoint! 0.5 seems to work well
+for 2 workers, but not for 3 or 4 workers.
 
-The efficency of training could be a little greater the N for N worker
-with EASGD. See the paper.
+The EASGD paper tell that this algo could find better test test error
+then without it. They have see a small better test error. See the
+paper.
 
 Implementing a controller
 -------------------------
