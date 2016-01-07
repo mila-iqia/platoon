@@ -305,15 +305,12 @@ class Soldier(object):
             if socks.get(self.asocket) == zmq.POLLIN:
                 headers = self.asocket.recv_json()
         else:
-            raise Exception("Batch socket: recv_json timeout")
+            raise Exception("Batch socket: recv timeout")
 
         arrays = []
         for header in headers:
 
-            if socks and socks.get(self.asocket) == zmq.POLLIN:
-                data = self.asocket.recv(copy=False)
-            else:
-                raise Exception("Batch socket: recv timeout")
+            data = self.asocket.recv(copy=False)
 
             buf = buffer(data)
             array = numpy.ndarray(
