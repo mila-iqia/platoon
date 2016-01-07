@@ -1,8 +1,17 @@
 # platoon
 Experimental multi-GPU mini-framework for Theano
 
+It support **data-parallelism** inside one compute node, not
+model-parallelism. For model-parallelism check [Theano multiple GPUs
+tutorial](http://deeplearning.net/software/theano/tutorial/using_multi_gpu.html).
+
 This framework is still a prototype. It's interface is not polished and it is
 likely to undergo changes in the future.
+
+The framework allow multiple data-parallel algorithmes, but only
+[EASGD](http://arxiv.org/abs/1412.6651) is currently implemented.
+
+There is working examples in the examples directory.
 
 In Platoon, there are two main components : workers, and controllers.
 Workers do the bulk of the work (training, monitoring, ...). Controllers
@@ -14,6 +23,42 @@ facilitate this.
 The steps below describe what needs to be done to use Platoon for
 data-parallelism. The LSTM example in the folder 'example' was implemented
 following these steps and should be referred to for guidance.
+
+Timing of the LSTM example on 2 k80
+-----------------------------------
+
+The timing is about efficiency of computation, not efficiency of
+training.  So the parameter alpha is constant. The number of minibatch
+is fixed as the hyper-parameter. The sync is also fixed to be after 10
+mini-batch of computation.
+
+With 1 worker, it won't train well. This isn't recomanded. This is
+there just to show the overhead of the EASGD implementation.  Normal
+is without this framework, also there for overhead evaluation.
+
+Normal | 1 GPU | 2 GPU | 3 GPU | 4 GPU
+-------+-------+-------+-------+-------
+ 870s  |  912s |  477s |  329s |  254s
+ 1.00x | 0.95x | 1.82x | 2.65x | 3.42x
+
+
+Real usage consideration
+------------------------
+
+Hyper-parameters are probably dependent of the number of worker. This
+is to keep the efficient learning. At least, consider changing, the
+learning rate and the alpha parameter of EASGD.
+
+When changing the number of worker, you probably need to chagne the
+alpha value to keep efficient training. How to change it isn't
+clear. 0.5 for alpha with 2 workders seem to have good training efficency for
+this models/dataset/hyper-parameter combination.
+
+Is 1/N a good guideline for alpha? 1 datapoint! 0.5 seem to work well
+for 2 worker, but not for 3 or 4 workers.
+
+The efficency of training could be a little greater the N for N worker
+with EASGD. See the paper.
 
 Implementing a controller
 -------------------------
