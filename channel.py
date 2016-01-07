@@ -167,6 +167,8 @@ class Soldier(object):
         Will call :meth:`init_mb_sock` with this port.
     cport : int
         Will call :meth:`init_control_sock` with this port.
+    socket_timout : int
+        Timout in ms for both sockets. Default: 5 min
     hwm : int
         High water mark (see pyzmq docs).
 
@@ -178,8 +180,11 @@ class Soldier(object):
 
     """
 
-    def __init__(self, port=None, cport=None, hwm=10):
+    def __init__(self, port=None, cport=None, socket_timout=300000, hwm=10):
         self.context = zmq.Context()
+
+        self._socket_timout = socket_timout
+
         if port:
             self.init_mb_sock(port, hwm)
         if cport:
@@ -200,8 +205,12 @@ class Soldier(object):
 
         """
         self.asocket = self.context.socket(zmq.PULL)
+        self.asocket.setsockopt(zmq.LINGER, 0)
         self.asocket.set_hwm(hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
+
+        self.apoller = zmq.Poller()
+        self.apoller.register(self.asocket, zmq.POLLIN)
 
     def init_control_sock(self, port):
         """
@@ -216,7 +225,11 @@ class Soldier(object):
 
         """
         self.csocket = self.context.socket(zmq.REQ)
+        self.csocket.setsockopt(zmq.LINGER, 0)
         self.csocket.connect('tcp://localhost:{}'.format(port))
+
+        self.cpoller = zmq.Poller()
+        self.cpoller.register(self.csocket, zmq.POLLIN)
 
     def init_shared_params(self, job_name, params, param_sync_rule,
                            cleanup=False):
@@ -287,10 +300,18 @@ class Soldier(object):
             The list of numpy arrays for the minibatch
 
         """
-        headers = self.asocket.recv_json()
+        socks = dict(self.apoller.poll(self._socket_timout))
+        if socks:
+            if socks.get(self.asocket) == zmq.POLLIN:
+                headers = self.asocket.recv_json()
+        else:
+            raise Exception("Batch socket: recv timeout")
+
         arrays = []
         for header in headers:
+
             data = self.asocket.recv(copy=False)
+
             buf = buffer(data)
             array = numpy.ndarray(
                 buffer=buf, shape=header['shape'],
@@ -373,4 +394,9 @@ class Soldier(object):
 
         """
         self.csocket.send(json.dumps(req))
-        return json.loads(self.csocket.recv())
+
+        socks = dict(self.cpoller.poll(self._socket_timout))
+        if socks and socks.get(self.csocket) == zmq.POLLIN:
+            return json.loads(self.csocket.recv())
+        else:
+            raise Exception("Control Socket: recv timeout")
