@@ -15,7 +15,7 @@ class ParamSyncRule(object):
         try:
             f = self.theano_update(local_params)
             def update(master_params, f=f):
-                new_master_values = f(master_params)
+                new_master_values = f(*master_params)
                 for p, v in zip(master_params, new_master_values):
                     p[:] = v
         except NotImplementedError:
