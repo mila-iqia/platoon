@@ -273,8 +273,7 @@ class Worker(object):
             platform due to system restrictions.
 
         """
-        self.local_params = params
-        self.param_sync_rule = param_sync_rule
+        self.update_fn = param_sync_rule.make_update_function(params)
         if cleanup:
             try:
                 posix_ipc.unlink_semaphore(job_name+'lock')
@@ -304,8 +303,6 @@ class Worker(object):
                                                     buffer=self._shm,
                                                     offset=off))
             off += descr_size(dtype, shape)
-        self.update_fn = self.param_sync_rule.update_fn(params)
-
 
     def recv_mb(self):
         """
@@ -384,14 +381,7 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-        # This will compute the update and set the local params to
-        # their new value
-        new_vals = self.update_fn(self.shared_params)
-
-        # Here we copy the new values into the shared memory for the
-        # master params
-        for n, s in zip(new_vals, self.shared_params):
-            s[:] = n
+        self.update_fn(self.shared_params)
 
         if synchronous:
             self.unlock_params()

@@ -6,40 +6,44 @@ class ParamSyncRule(object):
     implementations of parameter synchronization rules for distributed
     training.
     """
-
-    def update_core(self, local_params, master_params):
+    def make_update_function(self, local_params):
+        """Return a function that will be called with the current value of the
+        master parameters and should update them inplace.  This
+        function must also update the values of local_params (that are
+        shared values) as a side effect.
         """
-        Iterator over updates for local and master params.
+        try:
+            f = self.theano_update(local_params)
+            def update(master_params, f=f):
+                new_master_values = f(master_params)
+                for p, v in zip(master_params, new_master_values):
+                    p[:] = v
+        except NotImplementedError:
+            def update(master_params, local_params=local_params,
+                       update_params=self.update_params):
+                local_param_values = [p.get_value() for p in local_params]
+                update_params(local_params_value, master_params)
+                for p, v in zip(local_params, local_param_values):
+                    p.set_value(v)
+        return update
 
-        This function must be ready to deal with symbolic or numerical
-        inputs.
+    def theano_update(self, local_params):
+        """Compile and return a theano function that will update the local
+        params and return new values for the master params.
+
+        This function is preferred to update_params below.
         """
         raise NotImplementedError()
 
     def update_params(self, local_params, master_params):
-        """
-        Perform an inplace update of the master parameters and returns the
-        parameters based on a certain parameter synchronisation rule.
-        """
-        for lp, mp, ul, um in izip(local_params, master_params,
-                                   self.update_core(local_params,
-                                                    master_params)):
-            lp += ul
-            mp += um
+        """Perform an inplace update of the local and master params according
+        to some update rule.
 
-    def update_fn(self, local_params):
+        This function need not be implemented if theano_update is
+        overridden.
+
         """
-        Return a theano function that will update the local shared
-        params and return the new values for the master params.
-        """
-        from theano import function
-        master_params = [l.type() for l in local_params]
-        ups = list(self.update_core(local_params, master_params))
-        up_master = [u[1] for u in ups]
-        up_local = [u[0] for u in ups]
-        return theano.function(master_params, up_master,
-                               updates=[(l, l + u) for l, u in
-                                        zip(local_params, up_local)])
+        raise NotImplementedError()
 
 
 class EASGD(ParamSyncRule):
@@ -71,7 +75,20 @@ class EASGD(ParamSyncRule):
     def set_alpha(self, alpha):
         self.alpha = alpha
 
-    def update_core(self, local_params, master_params):
+    def theano_update(self, local_params):
+        import theano
+        master_inps = [l.type() for l in local_params]
+        master_ups = []
+        local_ups = []
+        for p_local, p_master in zip(local_params, master_inps):
+            diff = self.alpha * (p_local - p_master)
+            local_ups.append(p_local - diff)
+            master_ups.append(p_master + diff)
+        return theano.function(master_inps, master_ups,
+                               updates=zip(local_params, local_ups))
+
+    def update_params(self, local_params, master_params):
         for p_local, p_master in zip(local_params, master_params):
             diff = self.alpha * (p_local - p_master)
-            yield -diff, diff
+            p_local -= diff
+            p_master += diff
