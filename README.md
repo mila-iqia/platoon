@@ -57,9 +57,8 @@ this model/dataset/hyper-parameter combination.
 Is 1/N a good guideline for alpha? 1 datapoint! 0.5 seems to work well
 for 2 workers, but not for 3 or 4 workers.
 
-The EASGD paper tell that this algo could find better test test error
-then without it. They have see a small better test error. See the
-paper.
+In the EASGD paper it is shown that in some cases a larger number of
+workers can result in a better test error.
 
 Implementing a controller
 -------------------------
