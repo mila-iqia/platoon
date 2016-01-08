@@ -1,14 +1,14 @@
 # platoon
 Experimental multi-GPU mini-framework for Theano
 
-It support **data-parallelism** inside one compute node, not
+It supports **data-parallelism** inside one compute node, not
 model-parallelism. For model-parallelism check [Theano multiple GPUs
 tutorial](http://deeplearning.net/software/theano/tutorial/using_multi_gpu.html).
 
-This framework is still a prototype. It's interface is not polished and it is
+This framework is still a prototype. It's interfaces is not polished and it is
 likely to undergo changes in the future.
 
-The framework allow multiple data-parallel algorithmes, but only
+The framework allows multiple data-parallel algorithms, but only
 [EASGD](http://arxiv.org/abs/1412.6651) is currently implemented.
 
 There are working examples in the examples directory.
@@ -45,17 +45,16 @@ Normal | 1 GPU | 2 GPU | 3 GPU | 4 GPU
 Real usage consideration
 ------------------------
 
-Hyper-parameters are probably dependent of the number of worker. This
-is to keep the efficient learning. At least, consider changing, the
+The optimal (as in more efficient for learning) hyper-parameters are
+dependant on the number of workers.  At least, consider changing, the
 learning rate and the alpha parameter of EASGD.
 
-When changing the number of workers, you probably need to change the
-alpha value to keep efficient training. How to change it isn't
-clear. 0.5 for alpha with 2 workers seem to have good training efficency for
-this model/dataset/hyper-parameter combination.
+How to change the alpha hyper-parameter isn't clear. An alpha of 0.5
+for the LSTM example with 2 workers seem to have good training
+efficency for this model/dataset/hyper-parameter combination.
 
 Is 1/N a good guideline for alpha? 1 datapoint! 0.5 seems to work well
-for 2 workers, but not for 3 or 4 workers.
+for 2 workers, but not so well for 3 or 4 workers.
 
 In the EASGD paper it is shown that in some cases a larger number of
 workers can result in a better test error.
