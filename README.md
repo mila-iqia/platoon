@@ -32,13 +32,13 @@ training.  So the parameter alpha is constant. The number of minibatch
 is fixed as the hyper-parameter. The sync is also fixed to be after 10
 mini-batch of computation.
 
-With 1 worker, platoon do not give you any advantage. This is
+With 1 worker, Platoon does not give you any advantage. This is
 there just to show the overhead of the EASGD implementation.  Normal
 is without this framework and with SGD, also there for overhead evaluation.
 
 Normal | 1 GPU | 2 GPUs | 3 GPUs | 4 GPUs
 -------+-------+--------+--------+-------
- 870s  |  912s |  477s  |  329s  |  254s
+  870s |  912s |  477s  |  329s  |  254s
  1.00x | 0.95x | 1.82x  | 2.65x  | 3.42x
 
 
@@ -54,7 +54,7 @@ for the LSTM example with 2 workers seem to have good training
 efficency for this model/dataset/hyper-parameter combination.
 
 Using alpha = 1/N (with N being the number of workers) might be a
-reasonable guidelines but the experiments performed with Platoon are
+reasonable guideline but the experiments performed with Platoon are
 insufficient to conclude anything.
 
 In the EASGD paper it is shown that in some cases a larger number of
