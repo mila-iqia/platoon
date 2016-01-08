@@ -1,8 +1,17 @@
 # platoon
 Experimental multi-GPU mini-framework for Theano
 
-This framework is still a prototype. It's interface is not polished and it is
+It supports **data-parallelism** inside one compute node, not
+model-parallelism. For model-parallelism check [Theano multiple GPUs
+tutorial](http://deeplearning.net/software/theano/tutorial/using_multi_gpu.html).
+
+This framework is still a prototype. It's interfaces is not polished and it is
 likely to undergo changes in the future.
+
+The framework allows multiple data-parallel algorithms, but only
+[EASGD](http://arxiv.org/abs/1412.6651) is currently implemented.
+
+There are working examples in the examples directory.
 
 In Platoon, there are two main components : workers, and controllers.
 Workers do the bulk of the work (training, monitoring, ...). Controllers
@@ -14,6 +23,42 @@ facilitate this.
 The steps below describe what needs to be done to use Platoon for
 data-parallelism. The LSTM example in the folder 'example' was implemented
 following these steps and should be referred to for guidance.
+
+Timing of the LSTM example on 2 k80
+-----------------------------------
+
+The timing is about efficiency of computation, not efficiency of
+training.  So the parameter alpha is constant. The number of minibatch
+is fixed as the hyper-parameter. The sync is also fixed to be after 10
+mini-batch of computation.
+
+With 1 worker, Platoon does not give you any advantage. This is
+there just to show the overhead of the EASGD implementation.  Normal
+is without this framework and with SGD, also there for overhead evaluation.
+
+Normal | 1 GPU | 2 GPUs | 3 GPUs | 4 GPUs
+-------+-------+--------+--------+-------
+  870s |  912s |  477s  |  329s  |  254s
+ 1.00x | 0.95x | 1.82x  | 2.65x  | 3.42x
+
+
+Real usage consideration
+------------------------
+
+The optimal (as in more efficient for learning) hyper-parameters values are
+dependant on the number of workers.  At least, consider tuning the
+learning rate and the alpha parameter of EASGD.
+
+How to change the alpha hyper-parameter isn't clear. An alpha of 0.5
+for the LSTM example with 2 workers seem to have good training
+efficency for this model/dataset/hyper-parameter combination.
+
+Using alpha = 1/N (with N being the number of workers) might be a
+reasonable guideline but the experiments performed with Platoon are
+insufficient to conclude anything.
+
+In the EASGD paper it is shown that in some cases a larger number of
+workers can result in a better test error.
 
 Implementing a controller
 -------------------------
