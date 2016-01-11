@@ -1,6 +1,7 @@
 import numpy
 import time
-
+import sys
+sys.path.append('..')
 import channel
 
 
@@ -34,11 +35,10 @@ class LSTMLieutenant(channel.Lieutenant):
         self.history_errs = []
         self.bad_counter = 0
 
-        self.stop = False
         self.valid = False
         self.start_time = None
 
-    def handle_control(self, req):
+    def handle_control(self, req, worker_id):
         """
         Handles a control_request received from a worker
 
@@ -63,45 +63,42 @@ class LSTMLieutenant(channel.Lieutenant):
                 validation error so far, otherwise it will respond 'stop' if
                 the patience has been exceeded.
         """
+        control_response = ""
 
         if req == 'next':
             if self.start_time is None:
                 self.start_time = time.time()
-            if self.stop:
-                return 'stop'
+
             if self.valid:
                 self.valid = False
-                return 'valid'
-            return 'train'
-        if isinstance(req, dict):
-            if 'done' in req:
-                self.uidx += req['done']
-                if self.uidx > self.max_mb:
-                    self.stop = True
-                    self.stop_time = time.time()
-                    print "Training time (max_mb)  %fs" % (self.stop_time - self.start_time,)
-                    print "Number of samples", self.uidx
-                    return 'stop'
-                if numpy.mod(self.uidx, self.validFreq) == 0:
-                    self.valid = True
-            if 'valid_err' in req:
-                valid_err = req['valid_err']
-                test_err = req['test_err']
-                self.history_errs.append([valid_err, test_err])
-                harr = numpy.array(self.history_errs)[:, 0]
-                if valid_err <= harr.min():
-                    self.bad_counter = 0
-                    print "Best error valid:", valid_err, "test:", test_err
-                    return 'best'
-                if (len(self.history_errs) > self.patience and
-                        valid_err >= harr[:-self.patience].min()):
-                    self.bad_counter += 1
-                    if self.bad_counter > self.patience:
-                        self.stop_time = time.time()
-                        print "Training time (patience) %fs" % (self.stop_time - self.start_time,)
-                        print "Number of samples:", self.uidx
-                        self.stop = True
-                        return 'stop'
+                control_response = 'valid'
+            else:
+                control_response = 'train'
+        elif 'done' in req:
+            self.uidx += req['done']
+
+            if numpy.mod(self.uidx, self.validFreq) == 0:
+                self.valid = True
+        elif 'valid_err' in req:
+            valid_err = req['valid_err']
+            test_err = req['test_err']
+            self.history_errs.append([valid_err, test_err])
+            harr = numpy.array(self.history_errs)[:, 0]
+
+            if valid_err <= harr.min():
+                self.bad_counter = 0
+                control_response = 'best'
+                print "Best error valid:", valid_err, "test:", test_err
+            elif (len(self.history_errs) > self.patience and valid_err >= harr[:-self.patience].min()):
+                self.bad_counter += 1
+
+        if self.uidx > self.max_mb or self.bad_counter > self.patience:
+            control_response = 'stop'
+            self.worker_is_done(worker_id)
+            print "Training time {:.4f}s".format(time.time() - self.start_time)
+            print "Number of samples:", self.uidx
+
+        return control_response
 
 
 def lstm_control(dataset='imdb',
