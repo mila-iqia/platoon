@@ -1,3 +1,4 @@
+import os
 import numpy
 import json
 
@@ -56,6 +57,10 @@ class Lieutenant(object):
     """
 
     def __init__(self, port=None, cport=None, hwm=10):
+
+        self._should_stop = False
+        self._worker_list = set()
+
         if port:
             self.init_data(port, hwm)
         if cport:
@@ -119,30 +124,40 @@ class Lieutenant(object):
             self.asocket.send(array, zmq.SNDMORE)
         self.asocket.send(arrays[-1])
 
-    def handle_control(self, req):
+    def handle_control(self, req, worker_id):
         """
-        Reimplement or assign a handler to this function to do
+        Re-implement or assign a handler to this function to do
         something with control messages.
 
         The replacement get one parameter which is the request and
-        shoud return the response which must be a json-encodable
-        object.  Other code is responsible for handling decoding,
-        enconding and the network.
+        should return the response which must be a json-encodable
+        object. Other code is responsible for handling decoding,
+        encoding and the network.
 
         """
         raise NotImplementedError("The Lieutenant class should not be "
-                                  "instanciated directly. Classes that "
+                                  "instantiated directly. Classes that "
                                   "inherit from Lieutenant should override "
                                   "the method `handle_control()`")
 
+    def worker_is_done(self, worker_id):
+        self._worker_list.discard(worker_id)
+        self._should_stop = True
+
     def serve(self):
         """
-        This method will loop forever handling control messages.
+        This method will handle control messages until the should_stop flag
+        has been raised and that all the known worker are done.
         """
-        while True:
-            req = self.csocket.recv()
-            rep = self.handle_control(json.loads(req))
-            self.csocket.send(json.dumps(rep))
+
+        while (not self._should_stop) or self._worker_list:
+            query = json.loads(self.csocket.recv())
+            self._worker_list.add(query['worker_id'])
+
+            response = self.handle_control(query['req'], query['worker_id'])
+
+            self.csocket.send(json.dumps(response))
+        self.csocket.close()
 
 
 def descr_size(dtype, shape):
@@ -158,7 +173,7 @@ class Soldier(object):
 
     This class handles the communication/synchronization with other processes.
     The features to do so (control channel, minibatch channel and shared
-    parameters) are all independant and optional so you don't have to use all
+    parameters) are all independent and optional so you don't have to use all
     of them.
 
     Parameters
@@ -184,6 +199,8 @@ class Soldier(object):
         self.context = zmq.Context()
 
         self._socket_timout = socket_timout
+
+        self._worker_id = os.getpid()
 
         if port:
             self.init_mb_sock(port, hwm)
@@ -393,7 +410,8 @@ class Soldier(object):
             Json-decoded object
 
         """
-        self.csocket.send(json.dumps(req))
+        query = {"worker_id": self._worker_id, "req": req}
+        self.csocket.send(json.dumps(query))
 
         socks = dict(self.cpoller.poll(self._socket_timout))
         if socks and socks.get(self.csocket) == zmq.POLLIN:

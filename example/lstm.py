@@ -559,6 +559,7 @@ def train_lstm(
     while True:
         step = s.send_req('next')
         print step
+
         if step == 'train':
             use_noise.set_value(numpy_floatX(1.))
             for i in xrange(train_len):
@@ -566,7 +567,8 @@ def train_lstm(
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
             print 'Train cost:', cost
-            s.send_req(dict(done=train_len))
+            step = s.send_req(dict(done=train_len))
+
             print "Syncing with global params"
             s.sync_params(synchronous=True)
 
