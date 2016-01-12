@@ -10,8 +10,12 @@ from theano import config
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-sys.path.append('..')
+import os
+
+sys.path.append(os.path.dirname(__file__))
 import imdb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from platoon import channel
 from platoon.param_sync import EASGD
 
