@@ -471,7 +471,7 @@ def train_lstm(
     mode='client',
 ):
 
-    s = channel.Soldier(cport=5567)
+    worker = channel.Worker(cport=5567)
 
     # Model options
     model_options = locals().copy()
@@ -509,9 +509,9 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    s.init_shared_params('DLTlstm', tparams.values(),
-                         param_sync_rule=EASGD(0.5),
-                         cleanup=(mode == 'init'))
+    worker.init_shared_params('DLTlstm', tparams.values(),
+                              param_sync_rule=EASGD(0.5),
+                              cleanup=(mode == 'init'))
     print "Params init done"
 
     if mode == 'test':
@@ -557,7 +557,7 @@ def train_lstm(
     best_p = None
 
     while True:
-        step = s.send_req('next')
+        step = worker.send_req('next')
         print step
 
         if step == 'train':
@@ -567,10 +567,10 @@ def train_lstm(
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
             print 'Train cost:', cost
-            step = s.send_req(dict(done=train_len))
+            step = worker.send_req(dict(done=train_len))
 
             print "Syncing with global params"
-            s.sync_params(synchronous=True)
+            worker.sync_params(synchronous=True)
 
         """
         if step.startswith('save '):
@@ -587,8 +587,8 @@ def train_lstm(
             valid_err = pred_error(f_pred, prepare_data, valid,
                                    kf_valid)
             test_err = pred_error(f_pred, prepare_data, test, kf_test)
-            res = s.send_req(dict(test_err=float(test_err),
-                                  valid_err=float(valid_err)))
+            res = worker.send_req(dict(test_err=float(test_err),
+                                       valid_err=float(valid_err)))
 
             if res == 'best':
                 best_p = unzip(tparams)

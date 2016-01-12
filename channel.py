@@ -27,7 +27,7 @@ def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
     return _ffi.buffer(m, length)
 
 
-class Lieutenant(object):
+class Controller(object):
     """
     Abstract multi-process controller
 
@@ -41,7 +41,7 @@ class Lieutenant(object):
         Due to the underlying implementation it is a bad idea to
         attempt to do both in the same process, even on different
         threads.  This will suffer from interlock problems and may
-        negate any speedup you could get from using multiple soldiers.
+        negate any speedup you could get from using multiple Workers.
 
         Because of this issue, the class may be split in the future.
 
@@ -135,9 +135,9 @@ class Lieutenant(object):
         encoding and the network.
 
         """
-        raise NotImplementedError("The Lieutenant class should not be "
+        raise NotImplementedError("The Controller class should not be "
                                   "instantiated directly. Classes that "
-                                  "inherit from Lieutenant should override "
+                                  "inherit from Controller should override "
                                   "the method `handle_control()`")
 
     def worker_is_done(self, worker_id):
@@ -167,9 +167,9 @@ def descr_size(dtype, shape):
     return size
 
 
-class Soldier(object):
+class Worker(object):
     """
-    Soldier object. Each worker should have one instance of this class.
+    Worker object. Each worker should have one instance of this class.
 
     This class handles the communication/synchronization with other processes.
     The features to do so (control channel, minibatch channel and shared
@@ -260,7 +260,7 @@ class Soldier(object):
         Paramters
         ---------
         job_name : str
-            An identifier.  This must be the same across all soldiers
+            An identifier.  This must be the same across all Workers
             that share paramters.
         params : shared variables
             Theano shared variables representing the weights of your model.
@@ -402,7 +402,7 @@ class Soldier(object):
         ----------
         req : object
             This is a json-encodable object that will be sent to the
-            lieutenant.
+            Controller.
 
         Returns
         -------
