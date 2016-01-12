@@ -37,7 +37,7 @@ there just to show the overhead of the EASGD implementation.  Normal
 is without this framework and with SGD, also there for overhead evaluation.
 
 Normal | 1 GPU | 2 GPUs | 3 GPUs | 4 GPUs
--------+-------+--------+--------+-------
+-------|-------|--------|--------|-------
   870s |  912s |  477s  |  329s  |  254s
  1.00x | 0.95x | 1.82x  | 2.65x  | 3.42x
 
