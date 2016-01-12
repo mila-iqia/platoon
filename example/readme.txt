@@ -1,10 +1,10 @@
- 
-To use the provided example, follow the steps below : 
+
+To use the provided example, follow the steps below :
 
 1) Run the script lstm_master.py in a shell and leave it running until it
-   prints "Lieutenant is ready".  This shouldn't take a long time.
+   prints "Controller is ready".  This shouldn't take a long time.
 
-2) Run "python lstm.py init" until it prints "Param init done".  
+2) Run "python lstm.py init" until it prints "Param init done".
 
 3) At this point, you can run other workers (with lstm.py).  You may want to
    run a single worker until it starts training to do all the compilation

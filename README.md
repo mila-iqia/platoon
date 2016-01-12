@@ -70,7 +70,7 @@ in the file lstm_master.py
 1) Define which commands your controller can receive and how it responds to
 them.
 
-This is done by creating a new class that inherits from channel.Lieutenant
+This is done by creating a new class that inherits from channel.Controller
 and having it override the method 'handle_control()' which will be called
 whenever your controller receives a request from a worker.
 
@@ -93,13 +93,13 @@ know whether the worker is the first one to be launched and should create the
 central parameters or not.
 
 2) Before entering the main loop, the script must create an instance of the
-class channel.Soldier, providing it with the same port number as used to
-initialize the controller. It is not necessary to sub-class Soldier, you can
+class channel.Worker, providing it with the same port number as used to
+initialize the controller. It is not necessary to sub-class Worker, you can
 instantiate it directly. This object will provide the necessary methods to
 handle communication with the controller.
 
 3) After the model has been built and the parameters initialized,
-initialize the central parameters by calling the Soldier's
+initialize the central parameters by calling the Worker's
 init_shared_params() method. Every worker should call this method but only
 the first worker to be launched should provide the parameter cleanup=True,
 the other workers should pass False or provide no value for this parameter.
@@ -111,7 +111,7 @@ established in the controller's 'handle_control()' method.
 
 5) In the main loop, whenever the worker has performed 'N' (a hyper-parameter)
 iterations of training, it should synchronize it's parameters with the central
-parameters using it's Soldier's 'sync_params()' method.
+parameters using it's Worker's 'sync_params()' method.
 
 Putting it all together
 -----------------------
