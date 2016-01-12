@@ -4,7 +4,7 @@ import time
 import sys
 sys.path.append('..')
 
-import channel
+from platoon import channel
 
 
 class LSTMLieutenant(channel.Lieutenant):
