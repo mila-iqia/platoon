@@ -76,6 +76,7 @@ class EASGD(ParamSyncRule):
         self.alpha = alpha
 
     def theano_update(self, local_params):
+        # Theano is imported here to avoid a strong dependancy on it.
         import theano
         master_inps = [l.type() for l in local_params]
         master_ups = []
