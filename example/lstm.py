@@ -12,8 +12,8 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 sys.path.append('..')
 import imdb
-import channel
-from param_sync import EASGD
+from platoon import channel
+from platoon.param_sync import EASGD
 
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
 

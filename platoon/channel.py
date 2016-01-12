@@ -182,8 +182,8 @@ class Worker(object):
         Will call :meth:`init_mb_sock` with this port.
     cport : int
         Will call :meth:`init_control_sock` with this port.
-    socket_timout : int
-        Timout in ms for both sockets. Default: 5 min
+    socket_timeout : int
+        Timeout in ms for both sockets. Default: 5 min
     hwm : int
         High water mark (see pyzmq docs).
 
@@ -195,10 +195,10 @@ class Worker(object):
 
     """
 
-    def __init__(self, port=None, cport=None, socket_timout=300000, hwm=10):
+    def __init__(self, port=None, cport=None, socket_timeout=300000, hwm=10):
         self.context = zmq.Context()
 
-        self._socket_timout = socket_timout
+        self._socket_timeout = socket_timeout
 
         self._worker_id = os.getpid()
 
@@ -317,7 +317,7 @@ class Worker(object):
             The list of numpy arrays for the minibatch
 
         """
-        socks = dict(self.apoller.poll(self._socket_timout))
+        socks = dict(self.apoller.poll(self._socket_timeout))
         if socks:
             if socks.get(self.asocket) == zmq.POLLIN:
                 headers = self.asocket.recv_json()
@@ -413,7 +413,7 @@ class Worker(object):
         query = {"worker_id": self._worker_id, "req": req}
         self.csocket.send(json.dumps(query))
 
-        socks = dict(self.cpoller.poll(self._socket_timout))
+        socks = dict(self.cpoller.poll(self._socket_timeout))
         if socks and socks.get(self.csocket) == zmq.POLLIN:
             return json.loads(self.csocket.recv())
         else:
