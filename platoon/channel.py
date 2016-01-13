@@ -410,3 +410,13 @@ class Worker(object):
             return json.loads(self.csocket.recv())
         else:
             raise Exception("Control Socket: recv timeout")
+
+    def close(self):
+        if hasattr(self, 'asocket'):
+            self.asocket.close()
+        if hasattr(self, 'csocket'):
+            self.csocket.close()
+        if hasattr(self, '_shmref'):
+            self._shmref.unlink()
+            self.lock.close()
+            self.lock.unlink()
