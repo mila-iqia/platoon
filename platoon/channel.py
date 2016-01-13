@@ -274,6 +274,7 @@ class Worker(object):
 
         """
         self.update_fn = param_sync_rule.make_update_function(params)
+        self.local_params = params
         if cleanup:
             try:
                 posix_ipc.unlink_semaphore(job_name+'lock')
@@ -382,6 +383,26 @@ class Worker(object):
             self.lock_params()
 
         self.update_fn(self.shared_params)
+
+        if synchronous:
+            self.unlock_params()
+
+    def copy_params(self, synchronous=True):
+        """
+        Copy the global params to the local ones.
+
+        Parameters
+        ----------
+        synchronous : bool
+            If False, the lock won't be acquired before touching the
+            shared weights.
+
+        """
+        if synchronous:
+            self.lock_params()
+
+            for p, v in zip(self.local_params, self.shared_params):
+                p.set_value(v)
 
         if synchronous:
             self.unlock_params()
