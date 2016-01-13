@@ -273,8 +273,7 @@ class Worker(object):
             platform due to system restrictions.
 
         """
-        self.local_params = params
-        self.param_sync_rule = param_sync_rule
+        self.update_fn = param_sync_rule.make_update_function(params)
         if cleanup:
             try:
                 posix_ipc.unlink_semaphore(job_name+'lock')
@@ -382,14 +381,7 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-        # Read the values of the local parameters, update them and the
-        # shared parameters and write back the new values of the local
-        # parameters
-        local_param_values = [p.get_value() for p in self.local_params]
-        self.param_sync_rule.update_params(local_param_values,
-                                           self.shared_params)
-        for param, value in zip(self.local_params, local_param_values):
-            param.set_value(value)
+        self.update_fn(self.shared_params)
 
         if synchronous:
             self.unlock_params()
