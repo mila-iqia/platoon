@@ -6,6 +6,7 @@ class ParamSyncRule(object):
     implementations of parameter synchronization rules for distributed
     training.
     """
+
     def make_update_function(self, local_params):
         """Return a function that will be called with the current value of the
         master parameters and should update them inplace.  This
@@ -14,6 +15,7 @@ class ParamSyncRule(object):
         """
         try:
             f = self.theano_update(local_params)
+
             def update(master_params, f=f):
                 new_master_values = f(*master_params)
                 for p, v in zip(master_params, new_master_values):
@@ -22,7 +24,7 @@ class ParamSyncRule(object):
             def update(master_params, local_params=local_params,
                        update_params=self.update_params):
                 local_param_values = [p.get_value() for p in local_params]
-                update_params(local_params_value, master_params)
+                update_params(local_param_values, master_params)
                 for p, v in zip(local_params, local_param_values):
                     p.set_value(v)
         return update
@@ -66,6 +68,7 @@ class EASGD(ParamSyncRule):
     This algorithm is described in more details in the following paper:
     http://arxiv.org/abs/1412.6651
     """
+
     def __init__(self, alpha):
         self.set_alpha(alpha)
 

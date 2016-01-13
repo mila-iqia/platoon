@@ -16,11 +16,11 @@ from platoon.param_sync import ParamSyncRule
 
 class SUMSync(ParamSyncRule):
 
-    def update_params(self, local_params, global_params):
+    def update_params(self, local_params, master_params):
         """
-        Update the global params and reset to local params.
+        Update the master params and reset to local params.
         """
-        global_params[0] += local_params[0]
+        master_params[0] += local_params[0]
         local_params[0].fill(0)
 
 
