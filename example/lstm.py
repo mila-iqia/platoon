@@ -585,7 +585,7 @@ def train_lstm(
 
         if step == 'valid':
             if valid_sync:
-                worker.copy_weights()
+                worker.copy_global_to_local()
             use_noise.set_value(numpy_floatX(0.))
             valid_err = pred_error(f_pred, prepare_data, valid,
                                    kf_valid)
@@ -599,7 +599,7 @@ def train_lstm(
             print ('Valid ', valid_err,
                    'Test ', test_err)
             if valid_sync:
-                worker.copy_weights()
+                worker.copy_global_to_local()
 
         if step == 'stop':
             break

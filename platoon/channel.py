@@ -387,7 +387,7 @@ class Worker(object):
         if synchronous:
             self.unlock_params()
 
-    def copy_params(self, synchronous=True):
+    def copy_to_local(self, synchronous=True):
         """
         Copy the global params to the local ones.
 
@@ -403,6 +403,26 @@ class Worker(object):
 
             for p, v in zip(self.local_params, self.shared_params):
                 p.set_value(v)
+
+        if synchronous:
+            self.unlock_params()
+
+    def copy_to_global(self, synchronous=True):
+        """
+        Copy the global params to the local ones.
+
+        Parameters
+        ----------
+        synchronous : bool
+            If False, the lock won't be acquired before touching the
+            shared weights.
+
+        """
+        if synchronous:
+            self.lock_params()
+
+            for p, v in zip(self.local_params, self.shared_params):
+                v[:] = p.get_value(borrow=True)
 
         if synchronous:
             self.unlock_params()
