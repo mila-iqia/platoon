@@ -458,6 +458,12 @@ class Worker(object):
         if hasattr(self, 'csocket'):
             self.csocket.close()
         if hasattr(self, '_shmref'):
-            self._shmref.unlink()
             self.lock.close()
-            self.lock.unlink()
+            try:
+                self.lock.unlink()
+            except posix_ipc.ExistentialError:
+                pass
+            try:
+                self._shmref.unlink()
+            except posix_ipc.ExistentialError:
+                pass
