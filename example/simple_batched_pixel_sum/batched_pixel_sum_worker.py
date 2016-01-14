@@ -33,8 +33,7 @@ class BatchedPixelSum(object):
 
         self._computed_sum = theano.shared(value=np.zeros(data_shape, dtype=theano.config.floatX), name='sum', borrow=True)
 
-        self._worker.init_shared_params(job_name='BatchedPixelSum',
-                                        params=[self._computed_sum],
+        self._worker.init_shared_params(params=[self._computed_sum],
                                         param_sync_rule=SUMSync(),
                                         cleanup=init)
 

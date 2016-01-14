@@ -207,6 +207,9 @@ class Worker(object):
 
         self._init_control_socket(control_port)
 
+        # os.getlogin() is not available on Windows
+        self._job_uid = "platoon_{0}_{1}".format(os.getlogin(), control_port)
+
     def init_mb_sock(self, port, hwm=10):
         """
         Initialize the minibatch socket.
@@ -248,8 +251,7 @@ class Worker(object):
         self.cpoller = zmq.Poller()
         self.cpoller.register(self.csocket, zmq.POLLIN)
 
-    def init_shared_params(self, job_name, params, param_sync_rule,
-                           cleanup=False):
+    def init_shared_params(self, params, param_sync_rule, cleanup=False):
         """
         Intialize shared memory parameters.
 
@@ -259,9 +261,6 @@ class Worker(object):
 
         Paramters
         ---------
-        job_name : str
-            An identifier.  This must be the same across all Workers
-            that share paramters.
         params : shared variables
             Theano shared variables representing the weights of your model.
         param_sync_rule : ParamSyncRule
@@ -278,24 +277,25 @@ class Worker(object):
 
         if cleanup:
             try:
-                posix_ipc.unlink_semaphore(job_name+'lock')
+                posix_ipc.unlink_semaphore(self._job_uid+'lock')
             except posix_ipc.ExistentialError:
                 pass
 
-        self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT, initial_value=1)
+        self.lock = posix_ipc.Semaphore(self._job_uid+'lock', posix_ipc.O_CREAT, initial_value=1)
 
         params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
         params_size = sum(descr_size(*d) for d in params_descr)
 
         if cleanup:
             try:
-                posix_ipc.unlink_shared_memory(job_name+'params')
+                posix_ipc.unlink_shared_memory(self._job_uid+'params')
             except posix_ipc.ExistentialError:
                 pass
 
-            self._shmref = posix_ipc.SharedMemory(job_name+'params', posix_ipc.O_CREAT, size=params_size)
+            self._shmref = posix_ipc.SharedMemory(self._job_uid+'params', posix_ipc.O_CREAT, size=params_size)
+        else:
+            self._shmref = posix_ipc.SharedMemory(self._job_uid+'params')
 
-        self._shmref = posix_ipc.SharedMemory(job_name+'params')
         self._shm = _mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []

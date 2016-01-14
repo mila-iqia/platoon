@@ -515,7 +515,7 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    worker.init_shared_params('DLTlstm', tparams.values(),
+    worker.init_shared_params(tparams.values(),
                               param_sync_rule=EASGD(0.5),
                               cleanup=init)
     print "Params init done"
