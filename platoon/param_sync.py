@@ -105,7 +105,7 @@ class ASGD(ParamSyncRule):
         self.old_locals = [theano.shared(l) for l in local_vals]
         # This updates the global params with the difference between
         # old and current (aka the gradients).
-        ret = [m - (p - o) for (p, o) in zip(master_inps, local_params,
+        ret = [m + (p - o) for (m, p, o) in zip(master_inps, local_params,
                                              self.old_locals)]
         # This keeps values before the update for the local params
         ups = list(zip(self.old_locals, ret))
