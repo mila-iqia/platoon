@@ -49,22 +49,22 @@ class Controller(object):
     ----------
     port : int
         The port number to communicate over
-    cport : int
+    control_port : int
         The control port number.
     hwm : int
         High water mark (see pyzmq docs).
 
     """
 
-    def __init__(self, port=None, cport=None, hwm=10):
+    def __init__(self, control_port, port=None, hwm=10):
 
         self._should_stop = False
         self._worker_list = set()
 
         if port:
             self.init_data(port, hwm)
-        if cport:
-            self.init_control(cport)
+
+        self._init_control_socket(control_port)
 
     def init_data(self, port, hwm=10):
         """
@@ -85,7 +85,7 @@ class Controller(object):
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
 
-    def init_control(self, port):
+    def _init_control_socket(self, port):
         """
         Initialize the control socket.
 
@@ -180,8 +180,8 @@ class Worker(object):
     ----------
     port : int, optional
         Will call :meth:`init_mb_sock` with this port.
-    cport : int
-        Will call :meth:`init_control_sock` with this port.
+    control_port : int
+        Will call :meth:`_init_control_socket` with this port.
     socket_timeout : int
         Timeout in ms for both sockets. Default: 5 min
     hwm : int
@@ -195,7 +195,7 @@ class Worker(object):
 
     """
 
-    def __init__(self, port=None, cport=None, socket_timeout=300000, hwm=10):
+    def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
         self.context = zmq.Context()
 
         self._socket_timeout = socket_timeout
@@ -204,8 +204,8 @@ class Worker(object):
 
         if port:
             self.init_mb_sock(port, hwm)
-        if cport:
-            self.init_control_sock(cport)
+
+        self._init_control_socket(control_port)
 
     def init_mb_sock(self, port, hwm=10):
         """
@@ -229,7 +229,7 @@ class Worker(object):
         self.apoller = zmq.Poller()
         self.apoller.register(self.asocket, zmq.POLLIN)
 
-    def init_control_sock(self, port):
+    def _init_control_socket(self, port):
         """
         Intialize control socket.
 
@@ -275,34 +275,34 @@ class Worker(object):
         """
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
+
         if cleanup:
             try:
                 posix_ipc.unlink_semaphore(job_name+'lock')
             except posix_ipc.ExistentialError:
                 pass
-        self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
-                                        initial_value=1)
 
-        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape)
-                        for p in params]
+        self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT, initial_value=1)
+
+        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
         params_size = sum(descr_size(*d) for d in params_descr)
+
         if cleanup:
             try:
                 posix_ipc.unlink_shared_memory(job_name+'params')
             except posix_ipc.ExistentialError:
                 pass
-            self._shmref = posix_ipc.SharedMemory(job_name+'params',
-                                                  posix_ipc.O_CREAT,
-                                                  size=params_size)
+
+            self._shmref = posix_ipc.SharedMemory(job_name+'params', posix_ipc.O_CREAT, size=params_size)
+
         self._shmref = posix_ipc.SharedMemory(job_name+'params')
         self._shm = _mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []
         off = 0
+
         for dtype, shape in params_descr:
-            self.shared_params.append(numpy.ndarray(shape, dtype=dtype,
-                                                    buffer=self._shm,
-                                                    offset=off))
+            self.shared_params.append(numpy.ndarray(shape, dtype=dtype, buffer=self._shm, offset=off))
             off += descr_size(dtype, shape)
 
     def recv_mb(self):

@@ -26,8 +26,8 @@ class SUMSync(ParamSyncRule):
 
 class BatchedPixelSum(object):
 
-    def __init__(self, batch_port, control_port, init):
-        self._worker = channel.Worker(port=batch_port, cport=control_port)
+    def __init__(self, control_port, batch_port, init):
+        self._worker = channel.Worker(control_port=control_port, port=batch_port)
 
         data_shape = self._worker.send_req('get_data_shape')
 
@@ -83,7 +83,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_port', default=5566, type=int, required=False, help='Port on which the batches will be transfered.')
     parser.add_argument('--control_port', default=5567, type=int, required=False, help='Port on which the control commands will be sent.')
-    parser.add_argument('--init', default=False, type=bool, required=False, help='If the worker should initialize the shared params.')
+    parser.add_argument('--init', action='store_true', default=False, required=False, help='If the worker should initialize the shared params.')
 
     return parser.parse_args()
 
@@ -91,8 +91,8 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     print "Init ...",
-    bps = BatchedPixelSum(batch_port=args.batch_port,
-                          control_port=args.control_port,
+    bps = BatchedPixelSum(control_port=args.control_port,
+                          batch_port=args.batch_port,
                           init=args.init)
     print "Done"
 

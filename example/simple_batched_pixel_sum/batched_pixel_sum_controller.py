@@ -10,8 +10,8 @@ from platoon import channel
 
 class BatchedPixelSumController(channel.Controller):
 
-    def __init__(self, batch_port, control_port, dataset, batch_size):
-        channel.Controller.__init__(self, None, control_port)
+    def __init__(self, control_port, batch_port, dataset, batch_size):
+        channel.Controller.__init__(self, control_port, None)
         # The data socket should be initialized in the process that will handle the batch.
         # That is why it's not initialized in the parent constructor. Second param = None
         self._batch_port = batch_port
@@ -102,8 +102,8 @@ if __name__ == '__main__':
     with gzip.open(mnist_path, 'rb') as f:
         train_set, _, _ = cPickle.load(f)
 
-    controller = BatchedPixelSumController(batch_port=args.batch_port,
-                                           control_port=args.control_port,
+    controller = BatchedPixelSumController(control_port=args.control_port,
+                                           batch_port=args.batch_port,
                                            dataset=train_set[0],
                                            batch_size=args.batch_size)
     controller.start_batch_server()

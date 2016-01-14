@@ -477,7 +477,7 @@ def train_lstm(
     valid_sync=False,
 ):
 
-    worker = channel.Worker(cport=5567)
+    worker = channel.Worker(control_port=5567)
 
     # Model options
     model_options = locals().copy()
@@ -636,13 +636,10 @@ def train_lstm(
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--init', dest='init', action='store_true',
-                        default=False)
-    parser.add_argument('--valid_sync', dest='valid_sync', action='store_true',
-                        default=False)
+    parser.add_argument('--init', dest='init', action='store_true', default=False)
+    parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
     args = parser.parse_args()
-    train_lstm(
-        init=args.init,
-        valid_sync=args.valid_sync,
-        test_size=500,
-    )
+
+    train_lstm(init=args.init,
+               valid_sync=args.valid_sync,
+               test_size=500)
