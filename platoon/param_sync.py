@@ -96,3 +96,22 @@ class EASGD(ParamSyncRule):
             diff = self.alpha * (p_local - p_master)
             p_local -= diff
             p_master += diff
+
+
+class ASGD(ParamSyncRule):
+    def theano_update(self, local_params):
+        import theano
+
+        local_vals = [p.get_value(borrow=True, return_internal_type=True)
+                      for p in local_params]
+        master_inps = [l.type() for l in local_params]
+        self.old_locals = [theano.shared(l) for l in local_vals]
+        # This updates the global params with the difference between
+        # old and current (aka the gradients).
+        ret = [m + (p - o) for (m, p, o) in zip(master_inps, local_params,
+                                             self.old_locals)]
+        # This keeps values before the update for the local params
+        ups = list(zip(self.old_locals, ret))
+        # This updates the local params to be the same as the global
+        ups += list(zip(local_params, ret))
+        return theano.function(master_inps, ret, updates=ups)

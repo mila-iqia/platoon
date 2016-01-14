@@ -274,6 +274,7 @@ class Worker(object):
 
         """
         self.update_fn = param_sync_rule.make_update_function(params)
+        self.local_params = params
         if cleanup:
             try:
                 posix_ipc.unlink_semaphore(job_name+'lock')
@@ -386,6 +387,46 @@ class Worker(object):
         if synchronous:
             self.unlock_params()
 
+    def copy_to_local(self, synchronous=True):
+        """
+        Copy the global params to the local ones.
+
+        Parameters
+        ----------
+        synchronous : bool
+            If False, the lock won't be acquired before touching the
+            shared weights.
+
+        """
+        if synchronous:
+            self.lock_params()
+
+            for p, v in zip(self.local_params, self.shared_params):
+                p.set_value(v)
+
+        if synchronous:
+            self.unlock_params()
+
+    def copy_to_global(self, synchronous=True):
+        """
+        Copy the global params to the local ones.
+
+        Parameters
+        ----------
+        synchronous : bool
+            If False, the lock won't be acquired before touching the
+            shared weights.
+
+        """
+        if synchronous:
+            self.lock_params()
+
+            for p, v in zip(self.local_params, self.shared_params):
+                v[:] = p.get_value(borrow=True)
+
+        if synchronous:
+            self.unlock_params()
+
     def send_req(self, req):
         """
         Send a control request.
@@ -410,3 +451,19 @@ class Worker(object):
             return json.loads(self.csocket.recv())
         else:
             raise Exception("Control Socket: recv timeout")
+
+    def close(self):
+        if hasattr(self, 'asocket'):
+            self.asocket.close()
+        if hasattr(self, 'csocket'):
+            self.csocket.close()
+        if hasattr(self, '_shmref'):
+            self.lock.close()
+            try:
+                self.lock.unlink()
+            except posix_ipc.ExistentialError:
+                pass
+            try:
+                self._shmref.unlink()
+            except posix_ipc.ExistentialError:
+                pass

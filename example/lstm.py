@@ -3,6 +3,7 @@ Build a tweet sentiment analyzer
 '''
 from collections import OrderedDict
 import sys
+import argparse
 
 import numpy
 import theano
@@ -472,7 +473,8 @@ def train_lstm(
                        # This frequently need a bigger model.
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
-    mode='client',
+    init=False,
+    valid_sync=False,
 ):
 
     worker = channel.Worker(cport=5567)
@@ -504,7 +506,7 @@ def train_lstm(
     # Dict name (string) -> numpy ndarray
     params = init_params(model_options)
 
-    if mode == 'init':
+    if init:
         if reload_model:
             load_params('lstm_model.npz', params)
 
@@ -515,12 +517,8 @@ def train_lstm(
 
     worker.init_shared_params('DLTlstm', tparams.values(),
                               param_sync_rule=EASGD(0.5),
-                              cleanup=(mode == 'init'))
+                              cleanup=init)
     print "Params init done"
-
-    if mode == 'test':
-        import pdb
-        pdb.set_trace()
 
     # use_noise is for dropout
     (use_noise, x, mask,
@@ -587,6 +585,8 @@ def train_lstm(
         """
 
         if step == 'valid':
+            if valid_sync:
+                worker.copy_to_local()
             use_noise.set_value(numpy_floatX(0.))
             valid_err = pred_error(f_pred, prepare_data, valid,
                                    kf_valid)
@@ -599,11 +599,14 @@ def train_lstm(
 
             print ('Valid ', valid_err,
                    'Test ', test_err)
+            if valid_sync:
+                worker.copy_to_local()
 
         if step == 'stop':
             break
 
-    return
+    # Release all shared ressources.
+    worker.close()
 
     # FIX that shit later.
 """
@@ -632,7 +635,14 @@ def train_lstm(
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--init', dest='init', action='store_true',
+                        default=False)
+    parser.add_argument('--valid_sync', dest='valid_sync', action='store_true',
+                        default=False)
+    args = parser.parse_args()
     train_lstm(
-        mode=sys.argv[1],
+        init=args.init,
+        valid_sync=args.valid_sync,
         test_size=500,
     )
