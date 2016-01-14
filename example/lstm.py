@@ -604,7 +604,8 @@ def train_lstm(
         if step == 'stop':
             break
 
-    return
+    # Release all shared ressources.
+    worker.close()
 
     # FIX that shit later.
 """
