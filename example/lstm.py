@@ -3,6 +3,7 @@ Build a tweet sentiment analyzer
 '''
 from collections import OrderedDict
 import sys
+import argparse
 
 import numpy
 import theano
