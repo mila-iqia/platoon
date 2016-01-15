@@ -46,11 +46,22 @@ class Controller(object):
 
         self._should_stop = False
         self._worker_list = set()
+        self._need_init = True
 
         if port:
             self.init_data(port, hwm)
 
         self._init_control_socket(control_port)
+
+        ## Cleanup and init global lock and job_uid name ##
+        self._job_uid = "platoon_{0}_{1}".format(os.path.basename(os.path.expanduser('~')), control_port)
+
+        # The ExistentialError is apprently the only way to verify if the semaphore/shared_memory exists.
+        try:
+            posix_ipc.unlink_semaphore(self._job_uid+"lock")
+        except posix_ipc.ExistentialError:
+            pass
+        posix_ipc.Semaphore(self._job_uid+"lock", posix_ipc.O_CREAT, initial_value=1)
 
     def init_data(self, port, hwm=10):
         """
@@ -126,6 +137,24 @@ class Controller(object):
                                   "inherit from Controller should override "
                                   "the method `handle_control()`")
 
+    def _handle_base_control(self, req, worker_id):
+        """
+        This method handle base control commands.
+        Those commands should not be used in the handle_control method.
+        """
+        response = None
+        if req == "get_job_uid":
+            response = self._job_uid
+
+        elif req == "need_init":
+            print "###"
+            print response, self._need_init
+            response = self._need_init
+            self._need_init = False
+            print response, self._need_init
+
+        return response
+
     def worker_is_done(self, worker_id):
         self._worker_list.discard(worker_id)
         self._should_stop = True
@@ -140,7 +169,9 @@ class Controller(object):
             query = json.loads(self.csocket.recv())
             self._worker_list.add(query['worker_id'])
 
-            response = self.handle_control(query['req'], query['worker_id'])
+            response = self._handle_base_control(query['req'], query['worker_id'])
+            if response is None:
+                response = self.handle_control(query['req'], query['worker_id'])
 
             self.csocket.send(json.dumps(response))
         self.csocket.close()
@@ -186,8 +217,8 @@ class Worker(object):
 
         self._init_control_socket(control_port)
 
-        # os.getlogin() is not available on Windows
-        self._job_uid = "platoon_{0}_{1}".format(os.getlogin(), control_port)
+        self._job_uid = self.send_req("get_job_uid")
+        self._lock = posix_ipc.Semaphore(self._job_uid + "lock")
 
     def init_mb_sock(self, port, hwm=10):
         """
@@ -248,7 +279,7 @@ class Worker(object):
             size *= s
         return size
 
-    def init_shared_params(self, params, param_sync_rule, cleanup=False):
+    def init_shared_params(self, params, param_sync_rule):
         """
         Intialize shared memory parameters.
 
@@ -269,31 +300,38 @@ class Worker(object):
             platform due to system restrictions.
 
         """
+
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
 
         params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
         params_size = sum(self._get_descr_size(*d) for d in params_descr)
 
-        lock_name = "{}_lock".format(self._job_uid)
         shared_mem_name = "{}_params".format(self._job_uid)
 
-        if cleanup:
-            # The ExistentialError is apprently the only way to verify if the semaphore/shared_memory exists.
-            try:
-                posix_ipc.unlink_semaphore(lock_name)
-            except posix_ipc.ExistentialError:
-                pass
+        # Aquire lock to decide who will init the shared memory
+        print "##### Waiting for init lock"
+        self.lock_params()
+        print "### GOT init lock"
+
+        need_init = self.send_req("need_init")
+
+        print "##### init:", need_init
+
+        if need_init:
+            print "############################# Entering INIT!!!"
+            # The ExistentialError is apprently the only way to verify if the shared_memory exists.
             try:
                 posix_ipc.unlink_shared_memory(shared_mem_name)
             except posix_ipc.ExistentialError:
                 pass
 
-            self.lock = posix_ipc.Semaphore(lock_name, posix_ipc.O_CREAT, initial_value=1)
             self._shmref = posix_ipc.SharedMemory(shared_mem_name, posix_ipc.O_CREAT, size=params_size)
         else:
-            self.lock = posix_ipc.Semaphore(lock_name)
             self._shmref = posix_ipc.SharedMemory(shared_mem_name)
+
+        self.unlock_params()
+        print "### DROPPED init lock"
 
         self._shm = self._mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
@@ -350,7 +388,7 @@ class Worker(object):
             not available.
 
         """
-        self.lock.acquire(timeout)
+        self._lock.acquire(timeout)
 
     def unlock_params(self):
         """
@@ -364,7 +402,7 @@ class Worker(object):
         Make sure you follow proper lock/unlock logic in your program
         to avoid these problems.
         """
-        self.lock.release()
+        self._lock.release()
 
     def sync_params(self, synchronous=True):
         """
@@ -457,9 +495,9 @@ class Worker(object):
         if hasattr(self, 'csocket'):
             self.csocket.close()
         if hasattr(self, '_shmref'):
-            self.lock.close()
+            self._lock.close()
             try:
-                self.lock.unlink()
+                self._lock.unlink()
             except posix_ipc.ExistentialError:
                 pass
             try:

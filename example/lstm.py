@@ -473,7 +473,6 @@ def train_lstm(
                        # This frequently need a bigger model.
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
-    init=False,
     valid_sync=False,
 ):
 
@@ -506,18 +505,15 @@ def train_lstm(
     # Dict name (string) -> numpy ndarray
     params = init_params(model_options)
 
-    if init:
-        if reload_model:
-            load_params('lstm_model.npz', params)
+    if reload_model:
+        load_params('lstm_model.npz', params)
 
     # This creates Theano Shared Variable from the parameters.
     # Dict name (string) -> Theano Tensor Shared Variable
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    worker.init_shared_params(tparams.values(),
-                              param_sync_rule=EASGD(0.5),
-                              cleanup=init)
+    worker.init_shared_params(tparams.values(), param_sync_rule=EASGD(0.5))
     print "Params init done"
 
     # use_noise is for dropout
@@ -636,10 +632,7 @@ def train_lstm(
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--init', dest='init', action='store_true', default=False)
     parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
     args = parser.parse_args()
 
-    train_lstm(init=args.init,
-               valid_sync=args.valid_sync,
-               test_size=500)
+    train_lstm(valid_sync=args.valid_sync, test_size=500)
