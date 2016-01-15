@@ -18,7 +18,7 @@ import imdb
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from platoon.channel import Worker
-from platoon.param_sync import EASGD
+from platoon.param_sync import ASGD
 
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
 
@@ -513,7 +513,7 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    worker.init_shared_params(tparams.values(), param_sync_rule=EASGD(0.5))
+    worker.init_shared_params(tparams.values(), param_sync_rule=ASGD())
     print "Params init done"
 
     # use_noise is for dropout

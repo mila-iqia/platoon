@@ -17,7 +17,7 @@ class Controller(object):
     """
     Abstract multi-process controller
 
-    This class provides the necessary features to dispatch data minibatches
+    This class provides the necessary features to dispatch data mini-batches
     to workers and handle control requests. Using this class should be done
     by having another class inherit from it and override the method
     `handle_control()`.
@@ -56,16 +56,17 @@ class Controller(object):
         ## Cleanup and init global lock and job_uid name ##
         self._job_uid = "platoon_{0}_{1}".format(os.path.basename(os.path.expanduser('~')), control_port)
 
-        # The ExistentialError is apprently the only way to verify if the semaphore/shared_memory exists.
+        # The ExistentialError is apparently the only way to verify if the semaphore/shared_memory exists.
         try:
             posix_ipc.unlink_semaphore(self._job_uid+"lock")
         except posix_ipc.ExistentialError:
             pass
+        # Initializing lock
         posix_ipc.Semaphore(self._job_uid+"lock", posix_ipc.O_CREAT, initial_value=1)
 
     def init_data(self, port, hwm=10):
         """
-        Initialize the minibatch socket.
+        Initialize the mini-batch socket.
 
         This must be called before using :meth:`send_mb`.
 
@@ -100,7 +101,7 @@ class Controller(object):
 
     def send_mb(self, arrays):
         """
-        Send a minibatch over the socket.
+        Send a mini-batch over the socket.
 
         This function may block if arrays are being sent faster than
         the clients can handle.
@@ -147,11 +148,8 @@ class Controller(object):
             response = self._job_uid
 
         elif req == "need_init":
-            print "###"
-            print response, self._need_init
             response = self._need_init
             self._need_init = False
-            print response, self._need_init
 
         return response
 
@@ -182,7 +180,7 @@ class Worker(object):
     Worker object. Each worker should have one instance of this class.
 
     This class handles the communication/synchronization with other processes.
-    The features to do so (control channel, minibatch channel and shared
+    The features to do so (control channel, mini-batch channel and shared
     parameters) are all independent and optional so you don't have to use all
     of them.
 
@@ -222,14 +220,14 @@ class Worker(object):
 
     def init_mb_sock(self, port, hwm=10):
         """
-        Initialize the minibatch socket.
+        Initialize the mini-batch socket.
 
         This must be called before using :meth:`recv_mb`.
 
         Parameters
         ----------
         port : int
-            The port to reach the minibatch server on.
+            The port to reach the mini-batch server on.
         hwm : int
             High water mark, see pyzmq docs.
 
@@ -244,11 +242,11 @@ class Worker(object):
 
     def _init_control_socket(self, port):
         """
-        Intialize control socket.
+        Initialize control socket.
 
         This must be called before using :meth:`send_req`.
 
-        Paramters
+        Parameters
         ---------
         port : int
             Port where the control master is listening on.
@@ -281,13 +279,13 @@ class Worker(object):
 
     def init_shared_params(self, params, param_sync_rule):
         """
-        Intialize shared memory parameters.
+        Initialize shared memory parameters.
 
         This must be called before accessing the params attribute
         and/or calling :meth:`sync_params`, :meth:`lock_params` or
         :meth:`unlock_params`.
 
-        Paramters
+        Parameters
         ---------
         params : shared variables
             Theano shared variables representing the weights of your model.
@@ -309,18 +307,12 @@ class Worker(object):
 
         shared_mem_name = "{}_params".format(self._job_uid)
 
-        # Aquire lock to decide who will init the shared memory
-        print "##### Waiting for init lock"
+        # Acquire lock to decide who will init the shared memory
         self.lock_params()
-        print "### GOT init lock"
 
         need_init = self.send_req("need_init")
-
-        print "##### init:", need_init
-
         if need_init:
-            print "############################# Entering INIT!!!"
-            # The ExistentialError is apprently the only way to verify if the shared_memory exists.
+            # The ExistentialError is apparently the only way to verify if the shared_memory exists.
             try:
                 posix_ipc.unlink_shared_memory(shared_mem_name)
             except posix_ipc.ExistentialError:
@@ -331,7 +323,6 @@ class Worker(object):
             self._shmref = posix_ipc.SharedMemory(shared_mem_name)
 
         self.unlock_params()
-        print "### DROPPED init lock"
 
         self._shm = self._mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
@@ -344,14 +335,14 @@ class Worker(object):
 
     def recv_mb(self):
         """
-        Recieve a minibatch for processing.
+        Receive a mini-batch for processing.
 
-        A minibatch is composed of a number of numpy arrays.
+        A mini-batch is composed of a number of numpy arrays.
 
         Returns
         -------
         list
-            The list of numpy arrays for the minibatch
+            The list of numpy arrays for the mini-batch
 
         """
         socks = dict(self.apoller.poll(self._socket_timeout))
@@ -384,7 +375,7 @@ class Worker(object):
         ----------
         timeout : int
             Amount of time to wait for the lock to be available.  A
-            timeout of 0 will raise an error immediatly if the lock is
+            timeout of 0 will raise an error immediately if the lock is
             not available.
 
         """
