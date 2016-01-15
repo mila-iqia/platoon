@@ -142,12 +142,13 @@ class Controller(object):
         """
         This method handle base control commands.
         Those commands should not be used in the handle_control method.
+        All base control commands should start with "platoon-".
         """
         response = None
-        if req == "get_job_uid":
+        if req == "platoon-get_job_uid":
             response = self._job_uid
 
-        elif req == "need_init":
+        elif req == "platoon-need_init":
             response = self._need_init
             self._need_init = False
 
@@ -215,7 +216,7 @@ class Worker(object):
 
         self._init_control_socket(control_port)
 
-        self._job_uid = self.send_req("get_job_uid")
+        self._job_uid = self.send_req("platoon-get_job_uid")
         self._lock = posix_ipc.Semaphore(self._job_uid + "lock")
 
     def init_mb_sock(self, port, hwm=10):
@@ -259,7 +260,8 @@ class Worker(object):
         self.cpoller = zmq.Poller()
         self.cpoller.register(self.csocket, zmq.POLLIN)
 
-    def _mmap(self, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
+    @staticmethod
+    def _mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
         _ffi = cffi.FFI()
         _ffi.cdef("void *mmap(void *, size_t, int, int, int, size_t);")
         _lib = _ffi.dlopen(None)
@@ -286,7 +288,7 @@ class Worker(object):
         :meth:`unlock_params`.
 
         Parameters
-        ---------
+        ----------
         params : shared variables
             Theano shared variables representing the weights of your model.
         param_sync_rule : ParamSyncRule
@@ -310,7 +312,7 @@ class Worker(object):
         # Acquire lock to decide who will init the shared memory
         self.lock_params()
 
-        need_init = self.send_req("need_init")
+        need_init = self.send_req("platoon-need_init")
         if need_init:
             # The ExistentialError is apparently the only way to verify if the shared_memory exists.
             try:
