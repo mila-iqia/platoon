@@ -13,20 +13,6 @@ import posix_ipc
 # Also this was only tested in python 2.7
 
 
-_ffi = cffi.FFI()
-_ffi.cdef("""
-void *mmap(void *, size_t, int, int, int, size_t);
-""")
-_lib = _ffi.dlopen(None)
-
-
-def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
-    m = _lib.mmap(addr, length, prot, flags, fd, offset)
-    if m == _ffi.cast('void *', -1):
-        raise OSError(_ffi.errno, "for mmap")
-    return _ffi.buffer(m, length)
-
-
 class Controller(object):
     """
     Abstract multi-process controller
@@ -160,13 +146,6 @@ class Controller(object):
         self.csocket.close()
 
 
-def descr_size(dtype, shape):
-    size = dtype.itemsize
-    for s in shape:
-        size *= s
-    return size
-
-
 class Worker(object):
     """
     Worker object. Each worker should have one instance of this class.
@@ -251,6 +230,24 @@ class Worker(object):
         self.cpoller = zmq.Poller()
         self.cpoller.register(self.csocket, zmq.POLLIN)
 
+    def _mmap(self, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
+        _ffi = cffi.FFI()
+        _ffi.cdef("void *mmap(void *, size_t, int, int, int, size_t);")
+        _lib = _ffi.dlopen(None)
+
+        addr = _ffi.NULL
+
+        m = _lib.mmap(addr, length, prot, flags, fd, offset)
+        if m == _ffi.cast('void *', -1):
+            raise OSError(_ffi.errno, "for mmap")
+        return _ffi.buffer(m, length)
+
+    def _get_descr_size(self, dtype, shape):
+        size = dtype.itemsize
+        for s in shape:
+            size *= s
+        return size
+
     def init_shared_params(self, params, param_sync_rule, cleanup=False):
         """
         Intialize shared memory parameters.
@@ -275,35 +272,37 @@ class Worker(object):
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
 
-        if cleanup:
-            try:
-                posix_ipc.unlink_semaphore(self._job_uid+'lock')
-            except posix_ipc.ExistentialError:
-                pass
-
-        self.lock = posix_ipc.Semaphore(self._job_uid+'lock', posix_ipc.O_CREAT, initial_value=1)
-
         params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
-        params_size = sum(descr_size(*d) for d in params_descr)
+        params_size = sum(self._get_descr_size(*d) for d in params_descr)
+
+        lock_name = "{}_lock".format(self._job_uid)
+        shared_mem_name = "{}_params".format(self._job_uid)
 
         if cleanup:
+            # The ExistentialError is apprently the only way to verify if the semaphore/shared_memory exists.
             try:
-                posix_ipc.unlink_shared_memory(self._job_uid+'params')
+                posix_ipc.unlink_semaphore(lock_name)
+            except posix_ipc.ExistentialError:
+                pass
+            try:
+                posix_ipc.unlink_shared_memory(shared_mem_name)
             except posix_ipc.ExistentialError:
                 pass
 
-            self._shmref = posix_ipc.SharedMemory(self._job_uid+'params', posix_ipc.O_CREAT, size=params_size)
+            self.lock = posix_ipc.Semaphore(lock_name, posix_ipc.O_CREAT, initial_value=1)
+            self._shmref = posix_ipc.SharedMemory(shared_mem_name, posix_ipc.O_CREAT, size=params_size)
         else:
-            self._shmref = posix_ipc.SharedMemory(self._job_uid+'params')
+            self.lock = posix_ipc.Semaphore(lock_name)
+            self._shmref = posix_ipc.SharedMemory(shared_mem_name)
 
-        self._shm = _mmap(fd=self._shmref.fd, length=params_size)
+        self._shm = self._mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []
         off = 0
 
         for dtype, shape in params_descr:
             self.shared_params.append(numpy.ndarray(shape, dtype=dtype, buffer=self._shm, offset=off))
-            off += descr_size(dtype, shape)
+            off += self._get_descr_size(dtype, shape)
 
     def recv_mb(self):
         """

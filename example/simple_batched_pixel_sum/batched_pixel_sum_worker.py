@@ -1,3 +1,4 @@
+import os
 import sys
 import gzip
 import cPickle
@@ -9,8 +10,8 @@ import theano
 from theano import tensor as T
 from theano.compat.python2x import OrderedDict
 
-sys.path.append('../../')
-from platoon import channel
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from platoon.channel import Worker
 from platoon.param_sync import ParamSyncRule
 
 
@@ -27,7 +28,7 @@ class SUMSync(ParamSyncRule):
 class BatchedPixelSum(object):
 
     def __init__(self, control_port, batch_port, init):
-        self._worker = channel.Worker(control_port=control_port, port=batch_port)
+        self._worker = Worker(control_port=control_port, port=batch_port)
 
         data_shape = self._worker.send_req('get_data_shape')
 

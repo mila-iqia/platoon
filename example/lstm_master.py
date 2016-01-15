@@ -3,12 +3,12 @@ import time
 
 import os
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from platoon.channel import Controller
 
-from platoon import channel
 
-
-class LSTMController(channel.Controller):
+class LSTMController(Controller):
     """
     This multi-process controller implements patience-based early-stopping SGD
     """
@@ -28,7 +28,7 @@ class LSTMController(channel.Controller):
             Number of minibatches to train on between every monitoring step.
         """
 
-        channel.Controller.__init__(self, control_port)
+        Controller.__init__(self, control_port)
         self.patience = patience
         self.max_mb = int(max_mb)
 

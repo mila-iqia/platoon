@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(__file__))
 import imdb
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from platoon import channel
+from platoon.channel import Worker
 from platoon.param_sync import EASGD
 
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
@@ -477,7 +477,7 @@ def train_lstm(
     valid_sync=False,
 ):
 
-    worker = channel.Worker(control_port=5567)
+    worker = Worker(control_port=5567)
 
     # Model options
     model_options = locals().copy()

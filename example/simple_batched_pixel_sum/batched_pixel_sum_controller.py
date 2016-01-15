@@ -1,17 +1,18 @@
+import os
 import sys
 import gzip
 import time
 import cPickle
 from multiprocessing import Process
 
-sys.path.append('../../')
-from platoon import channel
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from platoon.channel import Controller
 
 
-class BatchedPixelSumController(channel.Controller):
+class BatchedPixelSumController(Controller):
 
     def __init__(self, control_port, batch_port, dataset, batch_size):
-        channel.Controller.__init__(self, control_port, None)
+        Controller.__init__(self, control_port, None)
         # The data socket should be initialized in the process that will handle the batch.
         # That is why it's not initialized in the parent constructor. Second param = None
         self._batch_port = batch_port
