@@ -3,17 +3,17 @@ import time
 
 import os
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from platoon.channel import Controller
 
-from platoon import channel
 
-
-class LSTMController(channel.Controller):
+class LSTMController(Controller):
     """
     This multi-process controller implements patience-based early-stopping SGD
     """
 
-    def __init__(self, max_mb, patience, validFreq):
+    def __init__(self, control_port, max_mb, patience, validFreq):
         """
         Initialize the LSTMController
 
@@ -28,7 +28,7 @@ class LSTMController(channel.Controller):
             Number of minibatches to train on between every monitoring step.
         """
 
-        channel.Controller.__init__(self)
+        Controller.__init__(self, control_port)
         self.patience = patience
         self.max_mb = int(max_mb)
 
@@ -109,14 +109,11 @@ def lstm_control(dataset='imdb',
                  max_epochs=5000,
                  validFreq=370,
                  saveFreq=1110,
-                 saveto=None,
-                 ):
+                 saveto=None):
 
     # TODO: have a better way to set max_mb
-    l = LSTMController(max_mb=(5000*1998)/10, patience=patience,
-                       validFreq=validFreq)
+    l = LSTMController(control_port=5567, max_mb=(5000*1998)/10, patience=patience, validFreq=validFreq)
 
-    l.init_control(port=5567)
     print "Controller is ready"
     l.serve()
 

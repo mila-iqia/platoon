@@ -13,25 +13,11 @@ import posix_ipc
 # Also this was only tested in python 2.7
 
 
-_ffi = cffi.FFI()
-_ffi.cdef("""
-void *mmap(void *, size_t, int, int, int, size_t);
-""")
-_lib = _ffi.dlopen(None)
-
-
-def _mmap(addr=_ffi.NULL, length=0, prot=0x3, flags=0x1, fd=0, offset=0):
-    m = _lib.mmap(addr, length, prot, flags, fd, offset)
-    if m == _ffi.cast('void *', -1):
-        raise OSError(_ffi.errno, "for mmap")
-    return _ffi.buffer(m, length)
-
-
 class Controller(object):
     """
     Abstract multi-process controller
 
-    This class provides the necessary features to dispatch data minibatches
+    This class provides the necessary features to dispatch data mini-batches
     to workers and handle control requests. Using this class should be done
     by having another class inherit from it and override the method
     `handle_control()`.
@@ -49,26 +35,38 @@ class Controller(object):
     ----------
     port : int
         The port number to communicate over
-    cport : int
+    control_port : int
         The control port number.
     hwm : int
         High water mark (see pyzmq docs).
 
     """
 
-    def __init__(self, port=None, cport=None, hwm=10):
+    def __init__(self, control_port, port=None, hwm=10):
 
         self._should_stop = False
         self._worker_list = set()
+        self._need_init = True
 
         if port:
             self.init_data(port, hwm)
-        if cport:
-            self.init_control(cport)
+
+        self._init_control_socket(control_port)
+
+        ## Cleanup and init global lock and job_uid name ##
+        self._job_uid = "platoon_{0}_{1}".format(os.path.basename(os.path.expanduser('~')), control_port)
+
+        # The ExistentialError is apparently the only way to verify if the semaphore/shared_memory exists.
+        try:
+            posix_ipc.unlink_semaphore(self._job_uid+"lock")
+        except posix_ipc.ExistentialError:
+            pass
+        # Initializing lock
+        posix_ipc.Semaphore(self._job_uid+"lock", posix_ipc.O_CREAT, initial_value=1)
 
     def init_data(self, port, hwm=10):
         """
-        Initialize the minibatch socket.
+        Initialize the mini-batch socket.
 
         This must be called before using :meth:`send_mb`.
 
@@ -85,7 +83,7 @@ class Controller(object):
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
 
-    def init_control(self, port):
+    def _init_control_socket(self, port):
         """
         Initialize the control socket.
 
@@ -103,7 +101,7 @@ class Controller(object):
 
     def send_mb(self, arrays):
         """
-        Send a minibatch over the socket.
+        Send a mini-batch over the socket.
 
         This function may block if arrays are being sent faster than
         the clients can handle.
@@ -140,6 +138,22 @@ class Controller(object):
                                   "inherit from Controller should override "
                                   "the method `handle_control()`")
 
+    def _handle_base_control(self, req, worker_id):
+        """
+        This method handle base control commands.
+        Those commands should not be used in the handle_control method.
+        All base control commands should start with "platoon-".
+        """
+        response = None
+        if req == "platoon-get_job_uid":
+            response = self._job_uid
+
+        elif req == "platoon-need_init":
+            response = self._need_init
+            self._need_init = False
+
+        return response
+
     def worker_is_done(self, worker_id):
         self._worker_list.discard(worker_id)
         self._should_stop = True
@@ -154,17 +168,12 @@ class Controller(object):
             query = json.loads(self.csocket.recv())
             self._worker_list.add(query['worker_id'])
 
-            response = self.handle_control(query['req'], query['worker_id'])
+            response = self._handle_base_control(query['req'], query['worker_id'])
+            if response is None:
+                response = self.handle_control(query['req'], query['worker_id'])
 
             self.csocket.send(json.dumps(response))
         self.csocket.close()
-
-
-def descr_size(dtype, shape):
-    size = dtype.itemsize
-    for s in shape:
-        size *= s
-    return size
 
 
 class Worker(object):
@@ -172,7 +181,7 @@ class Worker(object):
     Worker object. Each worker should have one instance of this class.
 
     This class handles the communication/synchronization with other processes.
-    The features to do so (control channel, minibatch channel and shared
+    The features to do so (control channel, mini-batch channel and shared
     parameters) are all independent and optional so you don't have to use all
     of them.
 
@@ -180,8 +189,8 @@ class Worker(object):
     ----------
     port : int, optional
         Will call :meth:`init_mb_sock` with this port.
-    cport : int
-        Will call :meth:`init_control_sock` with this port.
+    control_port : int
+        Will call :meth:`_init_control_socket` with this port.
     socket_timeout : int
         Timeout in ms for both sockets. Default: 5 min
     hwm : int
@@ -195,7 +204,7 @@ class Worker(object):
 
     """
 
-    def __init__(self, port=None, cport=None, socket_timeout=300000, hwm=10):
+    def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
         self.context = zmq.Context()
 
         self._socket_timeout = socket_timeout
@@ -204,19 +213,22 @@ class Worker(object):
 
         if port:
             self.init_mb_sock(port, hwm)
-        if cport:
-            self.init_control_sock(cport)
+
+        self._init_control_socket(control_port)
+
+        self._job_uid = self.send_req("platoon-get_job_uid")
+        self._lock = posix_ipc.Semaphore(self._job_uid + "lock")
 
     def init_mb_sock(self, port, hwm=10):
         """
-        Initialize the minibatch socket.
+        Initialize the mini-batch socket.
 
         This must be called before using :meth:`recv_mb`.
 
         Parameters
         ----------
         port : int
-            The port to reach the minibatch server on.
+            The port to reach the mini-batch server on.
         hwm : int
             High water mark, see pyzmq docs.
 
@@ -229,13 +241,13 @@ class Worker(object):
         self.apoller = zmq.Poller()
         self.apoller.register(self.asocket, zmq.POLLIN)
 
-    def init_control_sock(self, port):
+    def _init_control_socket(self, port):
         """
-        Intialize control socket.
+        Initialize control socket.
 
         This must be called before using :meth:`send_req`.
 
-        Paramters
+        Parameters
         ---------
         port : int
             Port where the control master is listening on.
@@ -248,20 +260,35 @@ class Worker(object):
         self.cpoller = zmq.Poller()
         self.cpoller.register(self.csocket, zmq.POLLIN)
 
-    def init_shared_params(self, job_name, params, param_sync_rule,
-                           cleanup=False):
+    @staticmethod
+    def _mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
+        _ffi = cffi.FFI()
+        _ffi.cdef("void *mmap(void *, size_t, int, int, int, size_t);")
+        _lib = _ffi.dlopen(None)
+
+        addr = _ffi.NULL
+
+        m = _lib.mmap(addr, length, prot, flags, fd, offset)
+        if m == _ffi.cast('void *', -1):
+            raise OSError(_ffi.errno, "for mmap")
+        return _ffi.buffer(m, length)
+
+    def _get_descr_size(self, dtype, shape):
+        size = dtype.itemsize
+        for s in shape:
+            size *= s
+        return size
+
+    def init_shared_params(self, params, param_sync_rule):
         """
-        Intialize shared memory parameters.
+        Initialize shared memory parameters.
 
         This must be called before accessing the params attribute
         and/or calling :meth:`sync_params`, :meth:`lock_params` or
         :meth:`unlock_params`.
 
-        Paramters
-        ---------
-        job_name : str
-            An identifier.  This must be the same across all Workers
-            that share paramters.
+        Parameters
+        ----------
         params : shared variables
             Theano shared variables representing the weights of your model.
         param_sync_rule : ParamSyncRule
@@ -273,48 +300,51 @@ class Worker(object):
             platform due to system restrictions.
 
         """
+
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
-        if cleanup:
-            try:
-                posix_ipc.unlink_semaphore(job_name+'lock')
-            except posix_ipc.ExistentialError:
-                pass
-        self.lock = posix_ipc.Semaphore(job_name+'lock', posix_ipc.O_CREAT,
-                                        initial_value=1)
 
-        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape)
-                        for p in params]
-        params_size = sum(descr_size(*d) for d in params_descr)
-        if cleanup:
+        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
+        params_size = sum(self._get_descr_size(*d) for d in params_descr)
+
+        shared_mem_name = "{}_params".format(self._job_uid)
+
+        # Acquire lock to decide who will init the shared memory
+        self.lock_params()
+
+        need_init = self.send_req("platoon-need_init")
+        if need_init:
+            # The ExistentialError is apparently the only way to verify if the shared_memory exists.
             try:
-                posix_ipc.unlink_shared_memory(job_name+'params')
+                posix_ipc.unlink_shared_memory(shared_mem_name)
             except posix_ipc.ExistentialError:
                 pass
-            self._shmref = posix_ipc.SharedMemory(job_name+'params',
-                                                  posix_ipc.O_CREAT,
-                                                  size=params_size)
-        self._shmref = posix_ipc.SharedMemory(job_name+'params')
-        self._shm = _mmap(fd=self._shmref.fd, length=params_size)
+
+            self._shmref = posix_ipc.SharedMemory(shared_mem_name, posix_ipc.O_CREAT, size=params_size)
+        else:
+            self._shmref = posix_ipc.SharedMemory(shared_mem_name)
+
+        self.unlock_params()
+
+        self._shm = self._mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []
         off = 0
+
         for dtype, shape in params_descr:
-            self.shared_params.append(numpy.ndarray(shape, dtype=dtype,
-                                                    buffer=self._shm,
-                                                    offset=off))
-            off += descr_size(dtype, shape)
+            self.shared_params.append(numpy.ndarray(shape, dtype=dtype, buffer=self._shm, offset=off))
+            off += self._get_descr_size(dtype, shape)
 
     def recv_mb(self):
         """
-        Recieve a minibatch for processing.
+        Receive a mini-batch for processing.
 
-        A minibatch is composed of a number of numpy arrays.
+        A mini-batch is composed of a number of numpy arrays.
 
         Returns
         -------
         list
-            The list of numpy arrays for the minibatch
+            The list of numpy arrays for the mini-batch
 
         """
         socks = dict(self.apoller.poll(self._socket_timeout))
@@ -347,11 +377,11 @@ class Worker(object):
         ----------
         timeout : int
             Amount of time to wait for the lock to be available.  A
-            timeout of 0 will raise an error immediatly if the lock is
+            timeout of 0 will raise an error immediately if the lock is
             not available.
 
         """
-        self.lock.acquire(timeout)
+        self._lock.acquire(timeout)
 
     def unlock_params(self):
         """
@@ -365,7 +395,7 @@ class Worker(object):
         Make sure you follow proper lock/unlock logic in your program
         to avoid these problems.
         """
-        self.lock.release()
+        self._lock.release()
 
     def sync_params(self, synchronous=True):
         """
@@ -458,9 +488,9 @@ class Worker(object):
         if hasattr(self, 'csocket'):
             self.csocket.close()
         if hasattr(self, '_shmref'):
-            self.lock.close()
+            self._lock.close()
             try:
-                self.lock.unlink()
+                self._lock.unlink()
             except posix_ipc.ExistentialError:
                 pass
             try:

@@ -1,3 +1,4 @@
+import os
 import sys
 import gzip
 import cPickle
@@ -9,8 +10,8 @@ import theano
 from theano import tensor as T
 from theano.compat.python2x import OrderedDict
 
-sys.path.append('../../')
-from platoon import channel
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from platoon.channel import Worker
 from platoon.param_sync import ParamSyncRule
 
 
@@ -26,17 +27,14 @@ class SUMSync(ParamSyncRule):
 
 class BatchedPixelSum(object):
 
-    def __init__(self, batch_port, control_port, init):
-        self._worker = channel.Worker(port=batch_port, cport=control_port)
+    def __init__(self, control_port, batch_port):
+        self._worker = Worker(control_port=control_port, port=batch_port)
 
         data_shape = self._worker.send_req('get_data_shape')
 
         self._computed_sum = theano.shared(value=np.zeros(data_shape, dtype=theano.config.floatX), name='sum', borrow=True)
 
-        self._worker.init_shared_params(job_name='BatchedPixelSum',
-                                        params=[self._computed_sum],
-                                        param_sync_rule=SUMSync(),
-                                        cleanup=init)
+        self._worker.init_shared_params(params=[self._computed_sum], param_sync_rule=SUMSync())
 
         input = T.matrix(dtype=theano.config.floatX)
         batch_sum = T.sum(input, axis=0, dtype=theano.config.floatX)
@@ -83,7 +81,6 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_port', default=5566, type=int, required=False, help='Port on which the batches will be transfered.')
     parser.add_argument('--control_port', default=5567, type=int, required=False, help='Port on which the control commands will be sent.')
-    parser.add_argument('--init', default=False, type=bool, required=False, help='If the worker should initialize the shared params.')
 
     return parser.parse_args()
 
@@ -91,9 +88,8 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     print "Init ...",
-    bps = BatchedPixelSum(batch_port=args.batch_port,
-                          control_port=args.control_port,
-                          init=args.init)
+    bps = BatchedPixelSum(control_port=args.control_port,
+                          batch_port=args.batch_port)
     print "Done"
 
     computed_sum = bps.get_sum()
