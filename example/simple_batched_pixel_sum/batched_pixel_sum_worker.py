@@ -95,7 +95,7 @@ if __name__ == '__main__':
     computed_sum = bps.get_sum()
 
     # Get actual answer for testing
-    with gzip.open("../../data/mnist.pkl.gz", 'rb') as f:
+    with gzip.open("../data/mnist.pkl.gz", 'rb') as f:
         train_set, _, _ = cPickle.load(f)
     real_sum = train_set[0].sum(axis=0, dtype=theano.config.floatX)
     assert_allclose(computed_sum, real_sum)

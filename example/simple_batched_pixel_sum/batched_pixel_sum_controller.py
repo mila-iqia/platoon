@@ -96,7 +96,7 @@ def get_mnist(path):
 if __name__ == '__main__':
     args = parse_arguments()
 
-    mnist_path = "../../data/mnist.pkl.gz"
+    mnist_path = "../data/mnist.pkl.gz"
 
     get_mnist(mnist_path)
 
