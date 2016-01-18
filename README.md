@@ -9,7 +9,7 @@ This framework is still a prototype. It's interfaces is not polished and it is
 likely to undergo changes in the future.
 
 The framework allows multiple data-parallel algorithms, but only
-[EASGD](http://arxiv.org/abs/1412.6651) is currently implemented.
+[EASGD](http://arxiv.org/abs/1412.6651) and ASGD is currently implemented.
 
 There are working examples in the examples directory.
 
@@ -68,7 +68,7 @@ your controller. In the included LSTM example, both of these steps are done
 in the file lstm_master.py
 
 1) Define which commands your controller can receive and how it responds to
-them.
+them. Commands starting by "platoon-" are reserved by platoon.
 
 This is done by creating a new class that inherits from channel.Controller
 and having it override the method 'handle_control()' which will be called
@@ -100,9 +100,7 @@ handle communication with the controller.
 
 3) After the model has been built and the parameters initialized,
 initialize the central parameters by calling the Worker's
-init_shared_params() method. Every worker should call this method but only
-the first worker to be launched should provide the parameter cleanup=True,
-the other workers should pass False or provide no value for this parameter.
+init_shared_params() method. Every worker should call this method.
 
 4) In the main loop, instead of deciding when to train and when to monitor
 performance, the worker should send control request to the controller to know
