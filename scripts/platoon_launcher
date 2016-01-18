@@ -48,8 +48,8 @@ if __name__ == '__main__':
     print "### Launching experiment: {}".format(args.experiment_name)
     process_list = {}
 
-    controller_process = launch_process(logs_folder, args.experiment_name, args.controller_args)
-    process_list['Controller'] = controller_process
+    process_list['Controller'] = launch_process(logs_folder, args.experiment_name, args.controller_args)
+    print dir(process_list['Controller'])
 
     for worker_id in args.gpu_list:
         worker_process = launch_process(logs_folder, args.experiment_name, args.workers_args, worker_id)
@@ -61,3 +61,8 @@ if __name__ == '__main__':
     for name in process_list:
         returncode = process_list[name].wait()
         print "{} terminated with return code: {}.".format(name, returncode)
+
+        if returncode != 0:
+            print "\n WARNING! An error has occurred.\nCleaning up and closing, see logs folder."
+            [p.kill() for p in process_list]
+            break
