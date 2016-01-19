@@ -24,45 +24,35 @@ The steps below describe what needs to be done to use Platoon for
 data-parallelism. The LSTM example in the folder 'example' was implemented
 following these steps and should be referred to for guidance.
 
-Timing of the LSTM example on 2 k80
------------------------------------
 
-The timing is about efficiency of computation, not efficiency of
-training.  So the parameter alpha is constant. The number of minibatch
-is fixed as the hyper-parameter. The sync is also fixed to be after 10
-mini-batch of computation.
-
-With 1 worker, Platoon does not give you any advantage. This is
-there just to show the overhead of the EASGD implementation.  Normal
-is without this framework and with SGD, also there for overhead evaluation.
-
-Normal | 1 GPU | 2 GPUs | 3 GPUs | 4 GPUs
--------|-------|--------|--------|-------
-  870s |  912s |  477s  |  329s  |  254s
- 1.00x | 0.95x | 1.82x  | 2.65x  | 3.42x
+## Install
+You can simply install it using pip.
+`pip install git+https://github.com/mila-udem/platoon`
 
 
-Real usage consideration
-------------------------
+If you you like to use the examples or help developp platoon first you have to clone the repo.
 
-The optimal (as in more efficient for learning) hyper-parameters values are
-dependant on the number of workers.  At least, consider tuning the
-learning rate and the alpha parameter of EASGD.
+`git clone https://github.com/mila-udem/platoon`
 
-How to change the alpha hyper-parameter isn't clear. An alpha of 0.5
-for the LSTM example with 2 workers seem to have good training
-efficency for this model/dataset/hyper-parameter combination.
+Then install what you just cloned.
 
-Using alpha = 1/N (with N being the number of workers) might be a
-reasonable guideline but the experiments performed with Platoon are
-insufficient to conclude anything.
+`pip install -e <path-to-platton-folder>`
 
-In the EASGD paper it is shown that in some cases a larger number of
-workers can result in a better test error.
 
-Implementing a controller
--------------------------
+## Usage
+The simplest way to launch a multi-gpu experiment is to first implementing a controller and a worker as described below and then launching it using the platoon_launcher.
 
+The launcher assume that you named both files as such: <experiment-name>_controller.py and <experiment-name>_worker.py
+
+Then to launch the experiment you just need to specify the experiment name and GPUs you want to use.
+
+`platoon_launcher <experiment-name> gpu0 gpu1`
+
+
+For more advanced use see `platoon_launcher -h`.
+
+
+### Implementing a controller
 These steps describe how to implement the Python script that will launch
 your controller. In the included LSTM example, both of these steps are done
 in the file lstm_master.py
@@ -81,9 +71,7 @@ done, define the port on which the controller should listen by calling the
 function 'init_control'. Finally, call your controller's 'serve' method which
 will make him ready to receive requests from workers.
 
-Implementing the workers
-------------------------
-
+### Implementing the workers
 These steps describe how to start with a script that performs stand-alone
 training of a machine learning model and adapt it to serve as a worker in
 Platoon.
@@ -111,13 +99,37 @@ established in the controller's 'handle_control()' method.
 iterations of training, it should synchronize it's parameters with the central
 parameters using it's Worker's 'sync_params()' method.
 
-Putting it all together
------------------------
 
-1) Launch your controller. Wait until it has reached the point where it is
-ready to serve requests.
+### Real usage consideration
+The optimal (as in more efficient for learning) hyper-parameters values are
+dependant on the number of workers. At least, consider tuning the
+learning rate and the alpha parameter of EASGD.
 
-2) Launch the first worker. Wait until it has performed the initialization of
-the central parameters.
+How to change the alpha hyper-parameter isn't clear. An alpha of 0.5
+for the LSTM example with 2 workers seem to have good training
+efficency for this model/dataset/hyper-parameter combination.
 
-3) Launch additional workers if desired.
+Using alpha = 1/N (with N being the number of workers) might be a
+reasonable guideline but the experiments performed with Platoon are
+insufficient to conclude anything.
+
+In the EASGD paper it is shown that in some cases a larger number of
+workers can result in a better test error.
+
+## Examples
+See `example` folder.
+
+### Timing of the LSTM example on 2 k80
+The timing is about efficiency of computation, not efficiency of
+training.  So the parameter alpha is constant. The number of minibatch
+is fixed as the hyper-parameter. The sync is also fixed to be after 10
+mini-batch of computation.
+
+With 1 worker, Platoon does not give you any advantage. This is
+there just to show the overhead of the EASGD implementation.  Normal
+is without this framework and with SGD, also there for overhead evaluation.
+
+Normal | 1 GPU | 2 GPUs | 3 GPUs | 4 GPUs
+-------|-------|--------|--------|-------
+  870s |  912s |  477s  |  329s  |  254s
+ 1.00x | 0.95x | 1.82x  | 2.65x  | 3.42x
