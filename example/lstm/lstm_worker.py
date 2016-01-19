@@ -16,7 +16,7 @@ import os
 sys.path.append(os.path.dirname(__file__))
 import imdb
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from platoon.channel import Worker
 from platoon.param_sync import EASGD
 

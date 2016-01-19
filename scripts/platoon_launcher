@@ -1,0 +1,60 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import time
+import argparse
+import subprocess
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
+    parser.add_argument('gpu_list', nargs='+', type=str, help='The list of GPU ids the script will use. 1 GPU id = 1 worker launched.')
+    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. Those should be put in quotes. (Ex: -c=\"--sync_rule EASGD\")')
+    parser.add_argument('-w', '--workers-args', required=False, help='The arguments that will be passed to your workers.  Those should be put in quotes. (Ex: -w=\"learning_rate=0.1\")')
+
+    return parser.parse_args()
+
+
+def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
+    print "Starting {0} on {1} ...".format(process_type, device),
+
+    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
+    with open(log_file.format("out"), 'w') as stdout_file:
+        with open(log_file.format("err"), 'w') as stderr_file:
+            command = "THEANO_FLAGS=$THEANO_FLAGS,'device={0}' python -u {1}_{2}.py ".format(device, experiment_name, process_type)
+            if not args is None:
+                command += args
+            process = subprocess.Popen([command], shell=True, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+
+    print "Done"
+    return process
+
+if __name__ == '__main__':
+    args = parse_arguments()
+
+    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
+    os.makedirs(logs_folder)
+
+    print "### Launching experiment: {}".format(args.experiment_name)
+    process_list = {}
+
+    process_list['Controller'] = launch_process(logs_folder, args.experiment_name, args.controller_args, "cpu", "controller")
+
+    for device in args.gpu_list:
+        worker_process = launch_process(logs_folder, args.experiment_name, args.workers_args, device)
+        process_list["Worker{}".format(device)] = worker_process
+
+    print "\n### Logs folder ###\n{}".format(logs_folder)
+
+    print "\n### Waiting on experiment to finish ..."
+    # Silly error handling but that will do for now.
+    for name in process_list:
+        returncode = process_list[name].wait()
+        print "{} terminated with return code: {}.".format(name, returncode)
+
+        if returncode != 0:
+            print "\n WARNING! An error has occurred.\nCleaning up and closing, see logs folder."
+            [p.kill() for p in process_list]
+            break
