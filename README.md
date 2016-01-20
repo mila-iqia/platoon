@@ -30,19 +30,19 @@ You can simply install it using pip.
 `pip install git+https://github.com/mila-udem/platoon`
 
 
-If you you like to use the examples or help developp platoon first you have to clone the repo.
+If you would like to use the examples or help develop platoon first you have to clone the repo.
 
 `git clone https://github.com/mila-udem/platoon`
 
 Then install what you just cloned.
 
-`pip install -e <path-to-platton-folder>`
+`pip install -e <path-to-platoon-folder>`
 
 
 ## Usage
-The simplest way to launch a multi-gpu experiment is to first implementing a controller and a worker as described below and then launching it using the platoon_launcher.
+The simplest way to launch a multi-gpu experiment is to first implement a controller and a worker as described below and then launch it using the `platoon_launcher`.
 
-The launcher assume that you named both files as such: <experiment-name>_controller.py and <experiment-name>_worker.py
+The launcher assume that you named both files as such: `<experiment-name>_controller.py` and `<experiment-name>_worker.py`
 
 Then to launch the experiment you just need to specify the experiment name and GPUs you want to use.
 
@@ -102,12 +102,12 @@ parameters using it's Worker's 'sync_params()' method.
 
 ### Real usage consideration
 The optimal (as in more efficient for learning) hyper-parameters values are
-dependant on the number of workers. At least, consider tuning the
+dependent on the number of workers. At least, consider tuning the
 learning rate and the alpha parameter of EASGD.
 
 How to change the alpha hyper-parameter isn't clear. An alpha of 0.5
 for the LSTM example with 2 workers seem to have good training
-efficency for this model/dataset/hyper-parameter combination.
+efficiency for this model/dataset/hyper-parameter combination.
 
 Using alpha = 1/N (with N being the number of workers) might be a
 reasonable guideline but the experiments performed with Platoon are
@@ -121,7 +121,7 @@ See `example` folder.
 
 ### Timing of the LSTM example on 2 k80
 The timing is about efficiency of computation, not efficiency of
-training.  So the parameter alpha is constant. The number of minibatch
+training.  So the parameter alpha is constant. The number of mini-batches
 is fixed as the hyper-parameter. The sync is also fixed to be after 10
 mini-batch of computation.
 
