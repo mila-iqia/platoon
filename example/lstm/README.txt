@@ -4,7 +4,7 @@ LSTM example using Platoon.
 
 ## CONTENT ##
 - README.txt
-- lstm_master.py
+- lstm_controller.py
 - lstm_worker.py
 - imdb.py
 

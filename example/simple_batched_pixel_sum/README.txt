@@ -5,7 +5,7 @@ The goal of this example is to showcase Platoon's functionality in the simplest 
 ## CONTENT ##
 - README.txt : This file!
 - batched_pixel_sum.py : A simple Theano pixel-wise sum on MNIST
-- batched_pixel_sum_master.py : A platoon implementation of batched_pixel_sum.py
+- batched_pixel_sum_controller.py : A platoon implementation of batched_pixel_sum.py
   batched_pixel_sum_worker.py
 
 
