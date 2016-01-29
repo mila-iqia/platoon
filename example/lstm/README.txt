@@ -14,8 +14,8 @@ LSTM example using Platoon.
 1) Assuming you are in the lstm folder.
    `cd platoon/example/lstm/`
 
-1) Launch the experiment on 2 GPUs using the platoon_launcher script.
-   `platoon_launcher lstm gpu0 gpu2`
+1) Launch the experiment on 2 GPUs using the platoon-launcher script.
+   `platoon-launcher lstm gpu0 gpu2`
 
 # MANUALLY
 1) Assuming you are in the lstm folder.
