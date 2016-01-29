@@ -40,16 +40,16 @@ Then install what you just cloned.
 
 
 ## Usage
-The simplest way to launch a multi-gpu experiment is to first implement a controller and a worker as described below and then launch it using the `platoon_launcher`.
+The simplest way to launch a multi-gpu experiment is to first implement a controller and a worker as described below and then launch it using the `platoon-launcher`.
 
 The launcher assume that you named both files as such: `<experiment-name>_controller.py` and `<experiment-name>_worker.py`
 
 Then to launch the experiment you just need to specify the experiment name and GPUs you want to use.
 
-`platoon_launcher <experiment-name> gpu0 gpu1`
+`platoon-launcher <experiment-name> gpu0 gpu1`
 
 
-For more advanced use see `platoon_launcher -h`.
+For more advanced use see `platoon-launcher -h`.
 
 
 ### Implementing a controller

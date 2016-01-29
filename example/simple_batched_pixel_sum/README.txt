@@ -14,9 +14,9 @@ The goal of this example is to showcase Platoon's functionality in the simplest 
 1) Assuming you are in the simple_batched_pixel_sum folder.
    `cd platoon/example/simple_batched_pixel_sum/`
 
-2) Launch the experiment on 1 gpu using the platoon_launcher script.
+2) Launch the experiment on 1 gpu using the platoon-launcher script.
    All the outputs will be saved in a newly created `PLATOON_LOGS` folder.
-   `platoon_launcher batched_pixel_sum gpu0`
+   `platoon-launcher batched_pixel_sum gpu0`
 
 # MANUALLY
 1) Assuming you are in the simple_batched_pixel_sum folder.

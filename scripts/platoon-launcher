@@ -8,7 +8,7 @@ import subprocess
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: platoon_launcher lstm gpu0 gpu3")
+    parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: platoon-launcher lstm gpu0 gpu3")
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
     parser.add_argument('gpu_list', nargs='+', type=str, help='The list of Theano GPU ids (Ex: gpu0, cuda1) the script will use. 1 GPU id = 1 worker launched.')
     parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. Those should be put in quotes. (Ex: -c=\"--sync_rule EASGD\")')

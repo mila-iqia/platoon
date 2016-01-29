@@ -6,7 +6,7 @@ setup(
     version='0.5.0',
     author='MILA',
     packages=['platoon'],
-    scripts=['scripts/platoon_launcher'],
+    scripts=['scripts/platoon-launcher'],
     url='https://github.com/mila-udem/platoon/',
     license='MIT',
     description='Experimental multi-GPU mini-framework for Theano',
