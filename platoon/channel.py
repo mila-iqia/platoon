@@ -56,13 +56,14 @@ class Controller(object):
         ## Cleanup and init global lock and job_uid name ##
         self._job_uid = "platoon_{0}_{1}".format(os.path.basename(os.path.expanduser('~')), control_port)
 
+        self._lock_name = "{}lock".format(self._job_uid)
         # The ExistentialError is apparently the only way to verify if the semaphore/shared_memory exists.
         try:
-            posix_ipc.unlink_semaphore(self._job_uid+"lock")
+            posix_ipc.unlink_semaphore(self._lock_name)
         except posix_ipc.ExistentialError:
             pass
         # Initializing lock
-        posix_ipc.Semaphore(self._job_uid+"lock", posix_ipc.O_CREAT, initial_value=1)
+        posix_ipc.Semaphore(self._lock_name, posix_ipc.O_CREAT, initial_value=1)
 
     def init_data(self, port, hwm=10):
         """
@@ -217,7 +218,7 @@ class Worker(object):
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
-        self._lock = posix_ipc.Semaphore(self._job_uid + "lock")
+        self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
 
     def init_mb_sock(self, port, hwm=10):
         """
@@ -324,8 +325,6 @@ class Worker(object):
         else:
             self._shmref = posix_ipc.SharedMemory(shared_mem_name)
 
-        self.unlock_params()
-
         self._shm = self._mmap(fd=self._shmref.fd, length=params_size)
         self._shmref.close_fd()
         self.shared_params = []
@@ -334,6 +333,11 @@ class Worker(object):
         for dtype, shape in params_descr:
             self.shared_params.append(numpy.ndarray(shape, dtype=dtype, buffer=self._shm, offset=off))
             off += self._get_descr_size(dtype, shape)
+
+        if need_init:
+            self.copy_to_global(synchronous=False)
+
+        self.unlock_params()
 
     def recv_mb(self):
         """
@@ -431,8 +435,8 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-            for p, v in zip(self.local_params, self.shared_params):
-                p.set_value(v)
+        for p, v in zip(self.local_params, self.shared_params):
+            p.set_value(v)
 
         if synchronous:
             self.unlock_params()
@@ -451,8 +455,8 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-            for p, v in zip(self.local_params, self.shared_params):
-                v[:] = p.get_value(borrow=True)
+        for p, v in zip(self.local_params, self.shared_params):
+            v[:] = p.get_value(borrow=True)
 
         if synchronous:
             self.unlock_params()
