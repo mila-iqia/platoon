@@ -435,8 +435,8 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-            for p, v in zip(self.local_params, self.shared_params):
-                p.set_value(v)
+        for p, v in zip(self.local_params, self.shared_params):
+            p.set_value(v)
 
         if synchronous:
             self.unlock_params()
@@ -455,8 +455,8 @@ class Worker(object):
         if synchronous:
             self.lock_params()
 
-            for p, v in zip(self.local_params, self.shared_params):
-                v[:] = p.get_value(borrow=True)
+        for p, v in zip(self.local_params, self.shared_params):
+            v[:] = p.get_value(borrow=True)
 
         if synchronous:
             self.unlock_params()
