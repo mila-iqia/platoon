@@ -554,6 +554,9 @@ def train_lstm(
 
     best_p = None
 
+    # Making sure that the worker start training with the most recent params
+    worker.copy_to_local()
+
     while True:
         step = worker.send_req('next')
         print step
