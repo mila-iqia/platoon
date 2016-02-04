@@ -12,8 +12,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: {} lstm gpu0 gpu3".format(os.path.basename(__file__)))
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
     parser.add_argument('gpu_list', nargs='+', type=str, help='The list of Theano GPU ids (Ex: gpu0, cuda1) the script will use. 1 GPU id = 1 worker launched.')
-    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. Those should be put in quotes. (Ex: -c=\"--sync_rule EASGD\")')
-    parser.add_argument('-w', '--workers-args', required=False, help='The arguments that will be passed to your workers.  Those should be put in quotes. (Ex: -w=\"learning_rate=0.1\")')
+    parser.add_argument('-c', '--controller-arg', required=False, help='The arguments that will be passed to your controller. You can specify this more than once to pass more arguments (Ex: -c --sync_rule -c EASGD)', action='append')
+    parser.add_argument('-w', '--workers-arg', required=False, help='The arguments that will be passed to your workers. You can specify this more than once to pass more arguments (Ex: -w learning_rate=0.1)', action='append')
 
     return parser.parse_args()
 
@@ -24,10 +24,12 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
     log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
     with open(log_file.format("out"), 'w') as stdout_file:
         with open(log_file.format("err"), 'w') as stderr_file:
-            command = "THEANO_FLAGS=$THEANO_FLAGS,'device={0}' python -u {1}_{2}.py ".format(device, experiment_name, process_type)
-            if args is not None:
+            env = dict(os.environ)
+            env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
+            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name, process_type)]
+            if not args is None:
                 command += args
-            process = subprocess.Popen([command], shell=True, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
 
     print("Done")
     return process
@@ -41,11 +43,11 @@ if __name__ == '__main__':
     print("### Launching experiment: {}".format(args.experiment_name))
     process_map = {}
 
-    p = launch_process(logs_folder, args.experiment_name, args.controller_args, "cpu", "controller")
+    p = launch_process(logs_folder, args.experiment_name, args.controller_arg, "cpu", "controller")
     process_map[p.pid] = ('Controller', p)
 
     for device in args.gpu_list:
-        worker_process = launch_process(logs_folder, args.experiment_name, args.workers_args, device)
+        worker_process = launch_process(logs_folder, args.experiment_name, args.workers_arg, device)
         process_map[worker_process.pid] = ("Worker{}".format(device),
                                            worker_process)
 
