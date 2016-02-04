@@ -25,7 +25,7 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
     with open(log_file.format("out"), 'w') as stdout_file:
         with open(log_file.format("err"), 'w') as stderr_file:
             command = "THEANO_FLAGS=$THEANO_FLAGS,'device={0}' python -u {1}_{2}.py ".format(device, experiment_name, process_type)
-            if not args is None:
+            if args is not None:
                 command += args
             process = subprocess.Popen([command], shell=True, bufsize=0, stdout=stdout_file, stderr=stderr_file)
 
@@ -39,28 +39,34 @@ if __name__ == '__main__':
     os.makedirs(logs_folder)
 
     print("### Launching experiment: {}".format(args.experiment_name))
-    process_list = {}
+    process_map = {}
 
-    process_list['Controller'] = launch_process(logs_folder, args.experiment_name, args.controller_args, "cpu", "controller")
+    p = launch_process(logs_folder, args.experiment_name, args.controller_args, "cpu", "controller")
+    process_map[p.pid] = ('Controller', p)
 
     for device in args.gpu_list:
         worker_process = launch_process(logs_folder, args.experiment_name, args.workers_args, device)
-        process_list["Worker{}".format(device)] = worker_process
+        process_map[worker_process.pid] = ("Worker{}".format(device),
+                                           worker_process)
 
     print("\n### Logs folder ###\n{}".format(logs_folder))
 
     print("\n### Waiting on experiment to finish ...")
 
     # Silly error handling but that will do for now.
-    for name in process_list:
-        returncode = process_list[name].wait()
-        print("{} terminated with return code: {}.".format(name, returncode))
-
+    while process_map:
+        pid, returncode = os.wait()
+        if pid in process_map:
+            name, p = process_map[pid]
+            del process_map[pid]
+            print("{} terminated with return code: {}.".format(name, returncode))
         if returncode != 0:
             print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
-            for p in process_list:
-                try:
-                    process_list[p].kill()
-                except:
-                    pass
-            break
+            while process_map:
+                for name, p in list(process_map.keys()):
+                    try:
+                        process_map[p].kill()
+                    except OSError:
+                        pass
+                    if p.poll() is not None:
+                        del process_map[p.pid]
