@@ -65,9 +65,9 @@ if __name__ == '__main__':
         if returncode != 0:
             print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
             while process_map:
-                for name, p in list(process_map.keys()):
+                for name, p in list(process_map.values()):
                     try:
-                        process_map[p].kill()
+                        p.kill()
                     except OSError:
                         pass
                     if p.poll() is not None:
