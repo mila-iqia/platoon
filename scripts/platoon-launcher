@@ -56,10 +56,12 @@ if __name__ == '__main__':
     # Silly error handling but that will do for now.
     while process_map:
         pid, returncode = os.wait()
-        if pid in process_map:
-            name, p = process_map[pid]
-            del process_map[pid]
-            print("{} terminated with return code: {}.".format(name, returncode))
+        if pid not in process_map:
+            print("Recieved status for unknown process {}".format(pid))
+
+        name, p = process_map[pid]
+        del process_map[pid]
+        print("{} terminated with return code: {}.".format(name, returncode))
         if returncode != 0:
             print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
             while process_map:
