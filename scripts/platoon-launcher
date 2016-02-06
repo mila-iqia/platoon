@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
 import os
 import time
 import argparse
@@ -18,7 +19,7 @@ def parse_arguments():
 
 
 def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
-    print "Starting {0} on {1} ...".format(process_type, device),
+    print("Starting {0} on {1} ...".format(process_type, device), end=' ')
 
     log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
     with open(log_file.format("out"), 'w') as stdout_file:
@@ -28,7 +29,7 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
                 command += args
             process = subprocess.Popen([command], shell=True, bufsize=0, stdout=stdout_file, stderr=stderr_file)
 
-    print "Done"
+    print("Done")
     return process
 
 if __name__ == '__main__':
@@ -37,7 +38,7 @@ if __name__ == '__main__':
     logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
     os.makedirs(logs_folder)
 
-    print "### Launching experiment: {}".format(args.experiment_name)
+    print("### Launching experiment: {}".format(args.experiment_name))
     process_list = {}
 
     process_list['Controller'] = launch_process(logs_folder, args.experiment_name, args.controller_args, "cpu", "controller")
@@ -46,17 +47,17 @@ if __name__ == '__main__':
         worker_process = launch_process(logs_folder, args.experiment_name, args.workers_args, device)
         process_list["Worker{}".format(device)] = worker_process
 
-    print "\n### Logs folder ###\n{}".format(logs_folder)
+    print("\n### Logs folder ###\n{}".format(logs_folder))
 
-    print "\n### Waiting on experiment to finish ..."
+    print("\n### Waiting on experiment to finish ...")
 
     # Silly error handling but that will do for now.
     for name in process_list:
         returncode = process_list[name].wait()
-        print "{} terminated with return code: {}.".format(name, returncode)
+        print("{} terminated with return code: {}.".format(name, returncode))
 
         if returncode != 0:
-            print "\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder."
+            print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
             for p in process_list:
                 try:
                     process_list[p].kill()

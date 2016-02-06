@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import sys
 import gzip
@@ -39,7 +40,7 @@ class BatchedPixelSumController(Controller):
             self.send_mb(self._dataset[batch_start:batch_stop])
 
         self.asocket.close()
-        print "Done Sending MB."
+        print("Done Sending MB.")
 
         # TODO: Find a solution for this
         # Sleeping to give the chance to the worker to empty the queue before the MB process dies
@@ -47,7 +48,7 @@ class BatchedPixelSumController(Controller):
         time.sleep(2)
 
     def handle_control(self, req, worker_id):
-        print "# Handling req: {}".format(req)
+        print("# Handling req: {}".format(req))
         control_response = ''
 
         if req == 'next':
@@ -61,7 +62,7 @@ class BatchedPixelSumController(Controller):
 
         elif 'done' in req:
             self._nb_batch_processed += req['done']
-            print "{} batches processed by worker so far.".format(self._nb_batch_processed)
+            print("{} batches processed by worker so far.".format(self._nb_batch_processed))
 
         if self._nb_batch_processed == self._nb_batch_to_process:
             control_response = 'stop'
@@ -86,11 +87,11 @@ def get_mnist(path):
     import urllib
 
     if not os.path.exists(path):
-        print "Downloading mnist ...",
+        print("Downloading mnist ...", end=' ')
         url = "http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz"
 
         urllib.urlretrieve(url, path)
-        print "Done"
+        print("Done")
 
 
 if __name__ == '__main__':
