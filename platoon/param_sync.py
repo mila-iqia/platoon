@@ -109,7 +109,7 @@ class ASGD(ParamSyncRule):
         # This updates the global params with the difference between
         # old and current (aka the gradients).
         ret = [m + (p - o) for (m, p, o) in zip(master_inps, local_params,
-                                             self.old_locals)]
+                                                self.old_locals)]
         # This keeps values before the update for the local params
         ups = list(zip(self.old_locals, ret))
         # This updates the local params to be the same as the global

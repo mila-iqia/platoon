@@ -53,17 +53,20 @@ class Controller(object):
 
         self._init_control_socket(control_port)
 
-        ## Cleanup and init global lock and job_uid name ##
-        self._job_uid = "platoon_{0}_{1}".format(os.path.basename(os.path.expanduser('~')), control_port)
+        # Cleanup and init global lock and job_uid name ##
+        self._job_uid = "platoon_{0}_{1}".format(
+                os.path.basename(os.path.expanduser('~')), control_port)
 
         self._lock_name = "{}lock".format(self._job_uid)
-        # The ExistentialError is apparently the only way to verify if the semaphore/shared_memory exists.
+        # The ExistentialError is apparently the only way to verify if
+        # the semaphore/shared_memory exists.
         try:
             posix_ipc.unlink_semaphore(self._lock_name)
         except posix_ipc.ExistentialError:
             pass
         # Initializing lock
-        posix_ipc.Semaphore(self._lock_name, posix_ipc.O_CREAT, initial_value=1)
+        posix_ipc.Semaphore(self._lock_name, posix_ipc.O_CREAT,
+                            initial_value=1)
 
     def init_data(self, port, hwm=10):
         """
@@ -169,9 +172,11 @@ class Controller(object):
             query = json.loads(self.csocket.recv())
             self._worker_list.add(query['worker_id'])
 
-            response = self._handle_base_control(query['req'], query['worker_id'])
+            response = self._handle_base_control(query['req'],
+                                                 query['worker_id'])
             if response is None:
-                response = self.handle_control(query['req'], query['worker_id'])
+                response = self.handle_control(query['req'],
+                                               query['worker_id'])
 
             self.csocket.send(json.dumps(response))
         self.csocket.close()
@@ -305,7 +310,8 @@ class Worker(object):
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
 
-        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape) for p in params]
+        params_descr = [(numpy.dtype(p.dtype), p.get_value(borrow=True).shape)
+                        for p in params]
         params_size = sum(self._get_descr_size(*d) for d in params_descr)
 
         shared_mem_name = "{}_params".format(self._job_uid)
@@ -315,13 +321,16 @@ class Worker(object):
 
         need_init = self.send_req("platoon-need_init")
         if need_init:
-            # The ExistentialError is apparently the only way to verify if the shared_memory exists.
+            # The ExistentialError is apparently the only way to verify
+            # if the shared_memory exists.
             try:
                 posix_ipc.unlink_shared_memory(shared_mem_name)
             except posix_ipc.ExistentialError:
                 pass
 
-            self._shmref = posix_ipc.SharedMemory(shared_mem_name, posix_ipc.O_CREAT, size=params_size)
+            self._shmref = posix_ipc.SharedMemory(shared_mem_name,
+                                                  posix_ipc.O_CREAT,
+                                                  size=params_size)
         else:
             self._shmref = posix_ipc.SharedMemory(shared_mem_name)
 
@@ -331,7 +340,9 @@ class Worker(object):
         off = 0
 
         for dtype, shape in params_descr:
-            self.shared_params.append(numpy.ndarray(shape, dtype=dtype, buffer=self._shm, offset=off))
+            self.shared_params.append(numpy.ndarray(shape, dtype=dtype,
+                                                    buffer=self._shm,
+                                                    offset=off))
             off += self._get_descr_size(dtype, shape)
 
         if need_init:
