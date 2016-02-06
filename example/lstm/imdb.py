@@ -1,3 +1,4 @@
+from __future__ import print_function
 import cPickle
 import gzip
 import os
@@ -69,7 +70,7 @@ def get_dataset_file(dataset, default_dataset, origin):
 
     if (not os.path.isfile(dataset)) and data_file == default_dataset:
         import urllib
-        print 'Downloading data from %s' % origin
+        print('Downloading data from %s' % origin)
         urllib.urlretrieve(origin, dataset)
     return dataset
 

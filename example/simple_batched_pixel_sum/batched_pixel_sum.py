@@ -1,3 +1,4 @@
+from __future__ import print_function
 import gzip
 import cPickle
 import numpy as np
@@ -29,7 +30,7 @@ class BatchedPixelSum(object):
         for i in xrange(self._dataset.shape[0]/self._batch_size):
             batch_start = i*self._batch_size
             batch_stop = (i + 1)*self._batch_size
-            print "Summing from {} to {}.".format(batch_start, batch_stop)
+            print("Summing from {} to {}.".format(batch_start, batch_stop))
             self._update_sum(self._dataset[batch_start:batch_stop])
         return self._computed_sum.get_value()
 
@@ -48,11 +49,11 @@ def get_mnist(path):
     import urllib
 
     if not os.path.exists(path):
-        print "Downloading mnist ...",
+        print("Downloading mnist ...", end=' ')
         url = "http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz"
 
         urllib.urlretrieve(url, path)
-        print "Done"
+        print("Done")
 
 if __name__ == '__main__':
     args = parse_arguments()

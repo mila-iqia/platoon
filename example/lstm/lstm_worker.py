@@ -1,6 +1,7 @@
 '''
 Build a tweet sentiment analyzer
 '''
+from __future__ import print_function
 from collections import OrderedDict
 import sys
 import argparse
@@ -425,7 +426,7 @@ def pred_probs(f_pred_prob, prepare_data, data, iterator, verbose=False):
 
         n_done += len(valid_index)
         if verbose:
-            print '%d/%d samples classified' % (n_done, n_samples)
+            print('%d/%d samples classified' % (n_done, n_samples))
 
     return probs
 
@@ -480,11 +481,11 @@ def train_lstm(
 
     # Model options
     model_options = locals().copy()
-    print "model options", model_options
+    print("model options", model_options)
 
     load_data, prepare_data = get_dataset('imdb')
 
-    print 'Loading data'
+    print('Loading data')
     train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
                                    maxlen=maxlen)
     if test_size > 0:
@@ -500,7 +501,7 @@ def train_lstm(
 
     model_options['ydim'] = ydim
 
-    print 'Building model'
+    print('Building model')
     # This create the initial parameters as numpy ndarrays.
     # Dict name (string) -> numpy ndarray
     params = init_params(model_options)
@@ -514,7 +515,7 @@ def train_lstm(
     tparams = init_tparams(params)
 
     worker.init_shared_params(tparams.values(), param_sync_rule=EASGD(0.5))
-    print "Params init done"
+    print("Params init done")
 
     # use_noise is for dropout
     (use_noise, x, mask,
@@ -536,7 +537,7 @@ def train_lstm(
     f_grad_shared, f_update = optimizer(lr, tparams, grads,
                                         x, mask, y, cost)
 
-    print 'Optimization'
+    print('Optimization')
 
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size)
     kf_test = get_minibatches_idx(len(test[0]), valid_batch_size)
@@ -559,7 +560,7 @@ def train_lstm(
 
     while True:
         step = worker.send_req('next')
-        print step
+        print(step)
 
         if step == 'train':
             use_noise.set_value(numpy_floatX(1.))
@@ -567,10 +568,10 @@ def train_lstm(
                 x, mask, y = next(train_it)
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
-            print 'Train cost:', cost
+            print('Train cost:', cost)
             step = worker.send_req(dict(done=train_len))
 
-            print "Syncing with global params"
+            print("Syncing with global params")
             worker.sync_params(synchronous=True)
 
         """
@@ -596,8 +597,8 @@ def train_lstm(
             if res == 'best':
                 best_p = unzip(tparams)
 
-            print ('Valid ', valid_err,
-                   'Test ', test_err)
+            print(('Valid ', valid_err,
+                   'Test ', test_err))
             if valid_sync:
                 worker.copy_to_local()
 

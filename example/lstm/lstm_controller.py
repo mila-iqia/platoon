@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy
 import time
 
@@ -91,15 +92,15 @@ class LSTMController(Controller):
             if valid_err <= harr.min():
                 self.bad_counter = 0
                 control_response = 'best'
-                print "Best error valid:", valid_err, "test:", test_err
+                print("Best error valid:", valid_err, "test:", test_err)
             elif (len(self.history_errs) > self.patience and valid_err >= harr[:-self.patience].min()):
                 self.bad_counter += 1
 
         if self.uidx > self.max_mb or self.bad_counter > self.patience:
             control_response = 'stop'
             self.worker_is_done(worker_id)
-            print "Training time {:.4f}s".format(time.time() - self.start_time)
-            print "Number of samples:", self.uidx
+            print("Training time {:.4f}s".format(time.time() - self.start_time))
+            print("Number of samples:", self.uidx)
 
         return control_response
 
@@ -114,7 +115,7 @@ def lstm_control(dataset='imdb',
     # TODO: have a better way to set max_mb
     l = LSTMController(control_port=5567, max_mb=(5000*1998)/10, patience=patience, validFreq=validFreq)
 
-    print "Controller is ready"
+    print("Controller is ready")
     l.serve()
 
 if __name__ == '__main__':

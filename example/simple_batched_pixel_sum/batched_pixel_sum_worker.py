@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import sys
 import gzip
@@ -51,27 +52,27 @@ class BatchedPixelSum(object):
 
         while True:
             step = self._worker.send_req('next')
-            print "# Command received: {}".format(step)
+            print("# Command received: {}".format(step))
 
             if step == 'train':
-                print "# Training",
+                print("# Training", end=' ')
                 # TODO: Having a fix number of MB before sync can cause problems
                 for i in xrange(nb_batches_before_sync):
                     data = np.asarray(self._worker.recv_mb())
-                    print ".",
+                    print(".", end=' ')
                     self._update_sum(data)
-                print "Done"
+                print("Done")
                 import time
                 time.sleep(1)
                 step = self._worker.send_req(dict(done=nb_batches_before_sync))
 
-                print "Syncing with global params."
+                print("Syncing with global params.")
                 self._worker.sync_params(synchronous=True)
 
             if step == 'stop':
                 break
 
-        print "All computation done."
+        print("All computation done.")
         return self._worker.shared_params[0]  # Return global params
 
 
@@ -87,10 +88,10 @@ def parse_arguments():
 if __name__ == '__main__':
     args = parse_arguments()
 
-    print "Init ...",
+    print("Init ...", end=' ')
     bps = BatchedPixelSum(control_port=args.control_port,
                           batch_port=args.batch_port)
-    print "Done"
+    print("Done")
 
     computed_sum = bps.get_sum()
 
