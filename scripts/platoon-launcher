@@ -4,6 +4,7 @@
 from __future__ import print_function
 import os
 import time
+import shlex
 import argparse
 import subprocess
 
@@ -12,8 +13,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: {} lstm gpu0 gpu3".format(os.path.basename(__file__)))
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
     parser.add_argument('gpu_list', nargs='+', type=str, help='The list of Theano GPU ids (Ex: gpu0, cuda1) the script will use. 1 GPU id = 1 worker launched.')
-    parser.add_argument('-c', '--controller-arg', required=False, help='The arguments that will be passed to your controller. Pass more than once for more than one argument. If your argument starts with a dash (-) use the = syntax. (Ex: -c=--sync_rule -c EASGD)', action='append', nargs=1)
-    parser.add_argument('-w', '--workers-arg', required=False, help='The arguments that will be passed to your workers. Pass more than once for multiple arguments. If your argument starts with a dash (-) use the = syntax. (Ex: -w learning_rate=0.1)', action='append')
+    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. (Ex: -c="--sync_rule EASGD")')
+    parser.add_argument('-w', '--workers-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
 
     return parser.parse_args()
 
@@ -43,11 +44,11 @@ if __name__ == '__main__':
     print("### Launching experiment: {}".format(args.experiment_name))
     process_map = {}
 
-    p = launch_process(logs_folder, args.experiment_name, args.controller_arg, "cpu", "controller")
+    p = launch_process(logs_folder, args.experiment_name, shlex.split(args.controller_args), "cpu", "controller")
     process_map[p.pid] = ('Controller', p)
 
     for device in args.gpu_list:
-        worker_process = launch_process(logs_folder, args.experiment_name, args.workers_arg, device)
+        worker_process = launch_process(logs_folder, args.experiment_name, shlex.split(args.workers_args), device)
         process_map[worker_process.pid] = ("Worker{}".format(device),
                                            worker_process)
 
