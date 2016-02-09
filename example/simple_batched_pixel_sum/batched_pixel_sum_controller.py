@@ -37,7 +37,7 @@ class BatchedPixelSumController(Controller):
     def _send_mb(self):
         self.init_data(self._batch_port)
 
-        for i in range(int(self._dataset.shape[0]/self._batch_size)):
+        for i in range(self._dataset.shape[0] // self._batch_size):
             batch_start = i*self._batch_size
             batch_stop = (i + 1)*self._batch_size
             self.send_mb(self._dataset[batch_start:batch_stop])
