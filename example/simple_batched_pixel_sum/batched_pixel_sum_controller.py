@@ -3,7 +3,8 @@ import os
 import sys
 import gzip
 import time
-import cPickle
+import six
+from six.moves import cPickle
 from multiprocessing import Process
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -14,8 +15,10 @@ class BatchedPixelSumController(Controller):
 
     def __init__(self, control_port, batch_port, dataset, batch_size):
         Controller.__init__(self, control_port, None)
-        # The data socket should be initialized in the process that will handle the batch.
-        # That is why it's not initialized in the parent constructor. Second param = None
+        # The data socket should be initialized in the process that will handle
+        # the batch.
+        # That is why it's not initialized in the parent constructor. Second
+        # param = None
         self._batch_port = batch_port
 
         self._start_time = None
@@ -34,7 +37,7 @@ class BatchedPixelSumController(Controller):
     def _send_mb(self):
         self.init_data(self._batch_port)
 
-        for i in xrange(self._dataset.shape[0]/self._batch_size):
+        for i in range(self._dataset.shape[0] // self._batch_size):
             batch_start = i*self._batch_size
             batch_stop = (i + 1)*self._batch_size
             self.send_mb(self._dataset[batch_start:batch_stop])
@@ -43,7 +46,8 @@ class BatchedPixelSumController(Controller):
         print("Done Sending MB.")
 
         # TODO: Find a solution for this
-        # Sleeping to give the chance to the worker to empty the queue before the MB process dies
+        # Sleeping to give the chance to the worker to empty the queue before
+        # the MB process dies
         import time
         time.sleep(2)
 
@@ -62,12 +66,14 @@ class BatchedPixelSumController(Controller):
 
         elif 'done' in req:
             self._nb_batch_processed += req['done']
-            print("{} batches processed by worker so far.".format(self._nb_batch_processed))
+            print("{} batches processed by worker so far."
+                  .format(self._nb_batch_processed))
 
         if self._nb_batch_processed == self._nb_batch_to_process:
             control_response = 'stop'
             self.worker_is_done(worker_id)
-            print("Training time {0:.4f}s".format(time.time() - self._start_time))
+            print("Training time {0:.4f}s"
+                  .format(time.time() - self._start_time))
         return control_response
 
 
@@ -75,9 +81,13 @@ def parse_arguments():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_port', default=5566, type=int, required=False, help='Port on which the batches will be transfered.')
-    parser.add_argument('--control_port', default=5567, type=int, required=False, help='Port on which the control commands will be sent.')
-    parser.add_argument('--batch-size', default=1000, type=int, required=False, help='Size of the batches.')
+    parser.add_argument('--batch_port', default=5566, type=int, required=False,
+                        help='Port on which the batches will be transfered.')
+    parser.add_argument('--control_port', default=5567, type=int,
+                        required=False, help='Port on which the control '
+                        'commands will be sent.')
+    parser.add_argument('--batch-size', default=1000, type=int, required=False,
+                        help='Size of the batches.')
 
     return parser.parse_args()
 
@@ -102,7 +112,10 @@ if __name__ == '__main__':
     get_mnist(mnist_path)
 
     with gzip.open(mnist_path, 'rb') as f:
-        train_set, _, _ = cPickle.load(f)
+        kwargs = {}
+        if six.PY3:
+            kwargs['encoding'] = 'latin1'
+        train_set, _, _ = cPickle.load(f, **kwargs)
 
     controller = BatchedPixelSumController(control_port=args.control_port,
                                            batch_port=args.batch_port,

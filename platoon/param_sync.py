@@ -89,7 +89,7 @@ class EASGD(ParamSyncRule):
             local_ups.append(p_local - diff)
             master_ups.append(p_master + diff)
         return theano.function(master_inps, master_ups,
-                               updates=zip(local_params, local_ups))
+                               updates=list(zip(local_params, local_ups)))
 
     def update_params(self, local_params, master_params):
         for p_local, p_master in zip(local_params, master_params):

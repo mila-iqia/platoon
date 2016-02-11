@@ -1,16 +1,21 @@
 import os
-import numpy
-import json
 
 import cffi
-import zmq
+import numpy
 import posix_ipc
+import six
+import zmq
 
 # You need:
 # $ conda install pyzmq cffi
 # $ pip install posix_ipc
 
 # Also this was only tested in python 2.7
+
+if six.PY3:
+    buffer_ = memoryview
+else:
+    buffer_ = buffer  # noqa
 
 
 class Controller(object):
@@ -169,7 +174,7 @@ class Controller(object):
         """
 
         while (not self._should_stop) or self._worker_list:
-            query = json.loads(self.csocket.recv())
+            query = self.csocket.recv_json()
             self._worker_list.add(query['worker_id'])
 
             response = self._handle_base_control(query['req'],
@@ -178,7 +183,7 @@ class Controller(object):
                 response = self.handle_control(query['req'],
                                                query['worker_id'])
 
-            self.csocket.send(json.dumps(response))
+            self.csocket.send_json(response)
         self.csocket.close()
 
 
@@ -374,7 +379,7 @@ class Worker(object):
 
             data = self.asocket.recv(copy=False)
 
-            buf = buffer(data)
+            buf = buffer_(data)
             array = numpy.ndarray(
                 buffer=buf, shape=header['shape'],
                 dtype=numpy.dtype(header['descr']),
@@ -489,11 +494,11 @@ class Worker(object):
 
         """
         query = {"worker_id": self._worker_id, "req": req}
-        self.csocket.send(json.dumps(query))
+        self.csocket.send_json(query)
 
         socks = dict(self.cpoller.poll(self._socket_timeout))
         if socks and socks.get(self.csocket) == zmq.POLLIN:
-            return json.loads(self.csocket.recv())
+            return self.csocket.recv_json()
         else:
             raise Exception("Control Socket: recv timeout")
 
