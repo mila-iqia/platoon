@@ -55,20 +55,20 @@ For more advanced use see `platoon-launcher -h`.
 ### Implementing a controller
 These steps describe how to implement the Python script that will launch
 your controller. In the included LSTM example, both of these steps are done
-in the file lstm_controller.py
+in the file `lstm_controller.py`
 
 1) Define which commands your controller can receive and how it responds to
 them. Commands starting by "platoon-" are reserved by platoon.
 
 This is done by creating a new class that inherits from channel.Controller
-and having it override the method 'handle_control()' which will be called
+and having it override the method `handle_control()` which will be called
 whenever your controller receives a request from a worker.
 
 2) Instantiate and launch your custom controller.
 
 Create a script that will instantiate your custom controller. Once this is
 done, define the port on which the controller should listen by calling the
-function 'init_control'. Finally, call your controller's 'serve' method which
+function `init_control`. Finally, call your controller's `serve` method which
 will make him ready to receive requests from workers.
 
 ### Implementing the workers
@@ -88,16 +88,16 @@ handle communication with the controller.
 
 3) After the model has been built and the parameters initialized,
 initialize the central parameters by calling the Worker's
-init_shared_params() method. Every worker should call this method.
+`init_shared_params()` method. Every worker should call this method.
 
 4) In the main loop, instead of deciding when to train and when to monitor
 performance, the worker should send control request to the controller to know
 what action it should take, according to the communication protocol
-established in the controller's 'handle_control()' method.
+established in the controller's `handle_control()` method.
 
-5) In the main loop, whenever the worker has performed 'N' (a hyper-parameter)
+5) In the main loop, whenever the worker has performed `N` (a hyper-parameter)
 iterations of training, it should synchronize it's parameters with the central
-parameters using it's Worker's 'sync_params()' method.
+parameters using it's Worker's `sync_params()` method.
 
 
 ### Real usage consideration
