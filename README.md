@@ -55,7 +55,7 @@ For more advanced use see `platoon-launcher -h`.
 ### Implementing a controller
 These steps describe how to implement the Python script that will launch
 your controller. In the included LSTM example, both of these steps are done
-in the file lstm_master.py
+in the file lstm_controller.py
 
 1) Define which commands your controller can receive and how it responds to
 them. Commands starting by "platoon-" are reserved by platoon.
