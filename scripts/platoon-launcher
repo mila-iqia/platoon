@@ -2,35 +2,54 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import print_function
-import os
-import time
-import shlex
 import argparse
+import os
+import shlex
+import signal
 import subprocess
+import time
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: {} lstm gpu0 gpu3".format(os.path.basename(__file__)))
-    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
-    parser.add_argument('gpu_list', nargs='+', type=str, help='The list of Theano GPU ids (Ex: gpu0, cuda1) the script will use. 1 GPU id = 1 worker launched.')
-    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. (Ex: -c="--sync_rule EASGD")')
-    parser.add_argument('-w', '--workers-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
+    parser = argparse.ArgumentParser(
+        description="Launcher for multi-GPU mini-framework. "
+                    "Ex: {} lstm gpu0 gpu3".format(os.path.basename(__file__)))
+    parser.add_argument('experiment_name',
+                        help='The name of your experiment. The launcher will '
+                             'expect to find the files '
+                             '<experiment_name>_controller.py and '
+                             '<experiment_name>_worker.py.')
+    parser.add_argument('gpu_list', nargs='+', type=str,
+                        help='The list of Theano GPU ids (Ex: gpu0, cuda1) '
+                             'the script will use. 1 GPU id = 1 worker '
+                             'launched.')
+    parser.add_argument('-c', '--controller-args', required=False,
+                        help='The arguments that will be passed to your '
+                             'controller. (Ex: -c="--sync_rule EASGD")')
+    parser.add_argument('-w', '--workers-args', required=False,
+                        help='The arguments that will be passed to your '
+                             'workers. (Ex: -w="learning_rate=0.1")')
 
     return parser.parse_args()
 
 
-def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
+def launch_process(logs_folder, experiment_name, args, device,
+                   process_type="worker"):
     print("Starting {0} on {1} ...".format(process_type, device), end=' ')
 
-    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
+    log_file = os.path.join(logs_folder, "{0}{1}.{{}}"
+                            .format(process_type, device))
     with open(log_file.format("out"), 'w') as stdout_file:
         with open(log_file.format("err"), 'w') as stderr_file:
             env = dict(os.environ)
-            env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
-            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name, process_type)]
-            if not args is None:
+            env['THEANO_FLAGS'] = \
+                '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
+            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name,
+                                                             process_type)]
+            if args:
                 command += args
-            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
+            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file,
+                                       stderr=stderr_file, env=env)
 
     print("Done")
     return process
@@ -38,17 +57,22 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
 if __name__ == '__main__':
     args = parse_arguments()
 
-    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
+    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name,
+                               time.strftime("%Y-%m-%d_%H-%M-%S"))
     os.makedirs(logs_folder)
 
     print("### Launching experiment: {}".format(args.experiment_name))
     process_map = {}
 
-    p = launch_process(logs_folder, args.experiment_name, shlex.split(args.controller_args or ''), "cpu", "controller")
+    p = launch_process(logs_folder, args.experiment_name,
+                       shlex.split(args.controller_args or ''),
+                       "cpu", "controller")
     process_map[p.pid] = ('Controller', p)
 
     for device in args.gpu_list:
-        worker_process = launch_process(logs_folder, args.experiment_name, shlex.split(args.workers_args or ''), device)
+        worker_process = launch_process(logs_folder, args.experiment_name,
+                                        shlex.split(args.workers_args or ''),
+                                        device)
         process_map[worker_process.pid] = ("Worker{}".format(device),
                                            worker_process)
 
@@ -66,7 +90,8 @@ if __name__ == '__main__':
         del process_map[pid]
         print("{} terminated with return code: {}.".format(name, returncode))
         if returncode != 0:
-            print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
+            print("\nWARNING! An error has occurred.\n"
+                  "Cleaning up and closing, see logs folder.")
             while process_map:
                 for name, p in list(process_map.values()):
                     try:
