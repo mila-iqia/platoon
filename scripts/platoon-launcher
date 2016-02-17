@@ -29,12 +29,27 @@ def parse_arguments():
     parser.add_argument('-w', '--workers-args', required=False,
                         help='The arguments that will be passed to your '
                              'workers. (Ex: -w="learning_rate=0.1")')
+    parser.add_argument('-d', '--detach', action='store_true',
+                        help='Make the workers ignore SIGTERM and SIGINT '
+                             'signals, leaving the controller to handle them')
 
     return parser.parse_args()
 
 
+def ignore():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+
+def launcher_ignore(signum, frame):
+    print('Received SIGINT or SIGTERM; waiting for controller to handle it\n'
+          'Press CTRL-C again to terminate')
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+
 def launch_process(logs_folder, experiment_name, args, device,
-                   process_type="worker"):
+                   process_type="worker", detach=False):
     print("Starting {0} on {1} ...".format(process_type, device), end=' ')
 
     log_file = os.path.join(logs_folder, "{0}{1}.{{}}"
@@ -48,8 +63,10 @@ def launch_process(logs_folder, experiment_name, args, device,
                                                              process_type)]
             if args:
                 command += args
+            ignore_if_detach = ignore if detach else None
             process = subprocess.Popen(command, bufsize=0, stdout=stdout_file,
-                                       stderr=stderr_file, env=env)
+                                       stderr=stderr_file, env=env,
+                                       preexec_fn=ignore_if_detach)
 
     print("Done")
     return process
@@ -72,13 +89,17 @@ if __name__ == '__main__':
     for device in args.gpu_list:
         worker_process = launch_process(logs_folder, args.experiment_name,
                                         shlex.split(args.workers_args or ''),
-                                        device)
+                                        device, detach=args.detach)
         process_map[worker_process.pid] = ("Worker{}".format(device),
                                            worker_process)
 
     print("\n### Logs folder ###\n{}".format(logs_folder))
 
     print("\n### Waiting on experiment to finish ...")
+
+    if args.detach:
+        signal.signal(signal.SIGINT, launcher_ignore)
+        signal.signal(signal.SIGTERM, launcher_ignore)
 
     # Silly error handling but that will do for now.
     while process_map:
