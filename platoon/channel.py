@@ -1,4 +1,5 @@
 import os
+import time
 
 import cffi
 import numpy
@@ -52,6 +53,9 @@ class Controller(object):
         self._should_stop = False
         self._worker_list = set()
         self._need_init = True
+
+        self._compiling = False
+        self._compiled = False
 
         if port:
             self.init_data(port, hwm)
@@ -161,6 +165,15 @@ class Controller(object):
             response = self._need_init
             self._need_init = False
 
+        elif req == "platoon-start_compilation":
+            response = not self._compiling
+            self._compiling = not self._compiled
+
+        elif req == "platoon-finish_compilation":
+            response = True
+            self._compiling = False
+            self._compiled = True
+
         return response
 
     def worker_is_done(self, worker_id):
@@ -229,6 +242,13 @@ class Worker(object):
 
         self._job_uid = self.send_req("platoon-get_job_uid")
         self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
+
+    def start_compilation(self):
+        while not self.send_req("platoon-start_compilation"):
+            time.sleep(1)
+
+    def finish_compilation(self):
+        self.send_req("platoon-finish_compilation")
 
     def init_mb_sock(self, port, hwm=10):
         """
