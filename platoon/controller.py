@@ -5,6 +5,8 @@ import posix_ipc
 import zmq
 from mpi4py import MPI
 
+from mmap import mmap
+
 
 class Controller(object):
     """
@@ -37,7 +39,7 @@ class Controller(object):
 
     """
 
-    def __init__(self, control_port, device_list, global_rank,
+    def __init__(self, control_port, device_list, global_size, global_rank,
                  port=None, hwm=10, global_comm_id=""):
 
         self._should_stop = False
@@ -47,11 +49,13 @@ class Controller(object):
         self._device_list = device_list
         # Controllers' MPI comm info
         self._global_rank = global_rank
+        self._global_size = global_size
         self._global_comm_id = "platoon-global_comm_" + global_comm_id
         self._global_comm = None
         # These 3 variables below will be used to take advantage of multi-node
         # support of NCCL (later)
         self._local_size = 0
+        self._count_workers = 0
         self._controller_rank = 0
         self._region_size = 0
 
@@ -72,8 +76,11 @@ class Controller(object):
         except posix_ipc.ExistentialError:
             pass
         # Initializing lock
-        posix_ipc.Semaphore(self._lock_name, posix_ipc.O_CREAT,
-                            initial_value=1)
+        self._lock = posix_ipc.Semaphore(self._lock_name, posix_ipc.O_CREAT,
+                                         initial_value=1)
+
+        self._shmrefs = dict()
+        self.shared_buffers = dict()
 
     def init_data(self, port, hwm=10):
         """
@@ -172,13 +179,43 @@ class Controller(object):
             if self._global_comm is None:
                 self._region_id = b"platoon-" + req_info['region_id']
                 self._region_size = self._local_size
-                self._init_global_comm()
+                self._init_global_comm()  # May change region of workers to be multi-node
             response = dict()
             response['region_id'] = self._region_id
             response['region_size'] = self._region_size
             response['regional_rank'] = self._controller_rank + req_info['local_rank']
 
+        elif req == "platoon-init_new_shmem":
+            first = self.is_worker_first()
+            gahash = req_info['gahash']
+            if first:
+                self._last_shmem_name = "platoon-{0}_{1}_buffer".format(self._job_uid,
+                                                                        len(self.shared_buffers))
+                try:
+                    posix_ipc.unlink_shared_memory(self._last_shmem_name)
+                except posix_ipc.ExistentialError:
+                    pass
+
+                size = req_info['size']
+                self._last_shmref = posix_ipc.SharedMemory(self._last_shmem_name,
+                                                           posix_ipc.O_CREAT,
+                                                           size=size)
+                self._last_shm = mmap(fd=self._last_shmref.fd, length=size)
+                self._last_shmref.close_fd()
+            self._shmrefs[gahash] = self._last_shmref
+            self.shared_buffers[gahash] = self._last_shm
+            response = self._last_shmem_name
+
+        elif req == "platoon-am_i_first":
+            response = self.is_worker_first()
+
         return response
+
+    def is_worker_first(self):
+        self._count_workers = (self._count_workers + 1) % self._local_size
+        if self._count_workers == 1:
+            return True
+        return False
 
     def worker_is_done(self, worker_id):
         self._worker_list.discard(worker_id)
