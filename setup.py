@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from distutils.core import setup
+from setuptools import setup
 
 setup(
     name='platoon',
@@ -11,5 +11,5 @@ setup(
     license='MIT',
     description='Experimental multi-GPU mini-framework for Theano',
     long_description=open('README.md').read(),
-    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six']
+    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six', 'mpi4py']
 )
