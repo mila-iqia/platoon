@@ -212,6 +212,17 @@ class Controller(object):
         elif req == "platoon-am_i_first":
             response = self.is_worker_first()  # See :ref:is_worker_first
 
+        elif req == "platoon-all_reduce":
+            dtype = req_info['dtype']
+            op = req_info['op']
+            array = self.shared_buffers[req_info['shmem']]
+            #  mpi_dtype = dtype_to_mpi(dtype)  # TODO
+            #  mpi_op = op_to_mpi(op)  # TODO
+            self._global_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
+                                        op=mpi_op)
+            # TODO add try/raise/finally and respond with success or failure to
+            # worker
+
         return response
 
     def is_worker_first(self):

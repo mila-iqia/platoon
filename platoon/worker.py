@@ -209,6 +209,8 @@ class Worker(object):
         size = gpuarray.size * gpuarray.itemsize
         shared_mem_name = self.send_req("platoon-init_new_shmem",
                                         info={'size': size})
+        # TODO if disbanded because of an error that happened to others, raise error
+
         #  self.lock()
 
         shmref = posix_ipc.SharedMemory(shared_mem_name)
@@ -240,6 +242,7 @@ class Worker(object):
 
         self.lock()
         first = self.send_req("platoon-am_i_first")
+        # TODO if disbanded because of an error that happened to others, raise error
         if first:
             # write from gpuarray to shared memory
             res.read(res_array)
@@ -248,6 +251,7 @@ class Worker(object):
             self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
                                                       'dtype': str(res.dtype),
                                                       'op': op})
+            # TODO unless it was successful, raise error
         self.unlock()
 
         # simultaneously read from shared memory back to result gpuarray
