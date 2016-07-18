@@ -186,8 +186,7 @@ class Controller(object):
             response['regional_rank'] = self._controller_rank + req_info['local_rank']
 
         elif req == "platoon-init_new_shmem":
-            first = self.is_worker_first()
-            gahash = req_info['gahash']
+            first = self.is_worker_first()  # See :ref:is_worker_first
             if first:
                 self._last_shmem_name = "platoon-{0}_{1}_buffer".format(self._job_uid,
                                                                         len(self.shared_buffers))
@@ -202,16 +201,26 @@ class Controller(object):
                                                            size=size)
                 self._last_shm = mmap(fd=self._last_shmref.fd, length=size)
                 self._last_shmref.close_fd()
-            self._shmrefs[gahash] = self._last_shmref
-            self.shared_buffers[gahash] = self._last_shm
+                # We want every worker to get the same shared memory name that is
+                # was declared in the first call of a mass request to this
+                # controller for initializing a new shared memory.
+                self._shmrefs[self._last_shmem_name] = self._last_shmref
+                # Keep for unlinking when closing
+                self.shared_buffers[self._last_shmem_name] = self._last_shm
             response = self._last_shmem_name
 
         elif req == "platoon-am_i_first":
-            response = self.is_worker_first()
+            response = self.is_worker_first()  # See :ref:is_worker_first
 
         return response
 
     def is_worker_first(self):
+        """Returns True, if in a mass request in a local platoon (workers in a
+        single host) a worker's request reaches first its controller
+
+        This will work only if every single worker participates successfully each
+        time in a concurrent request of the same type to their controller.
+        """
         self._count_workers = (self._count_workers + 1) % self._local_size
         if self._count_workers == 1:
             return True

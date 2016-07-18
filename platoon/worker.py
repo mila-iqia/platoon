@@ -205,10 +205,10 @@ class Worker(object):
 ################################################################################
 
     def new_linked_shared(self, gpuarray):
+        # TODO Get a hashable Theano variable and fetch pygpu internal
         size = gpuarray.size * gpuarray.itemsize
         shared_mem_name = self.send_req("platoon-init_new_shmem",
-                                        info={'gahash': hash(gpuarray),
-                                              'size': size})
+                                        info={'size': size})
         #  self.lock()
 
         shmref = posix_ipc.SharedMemory(shared_mem_name)
@@ -216,14 +216,19 @@ class Worker(object):
         shmref.close_fd()
         array = numpy.ndarray(gpuarray.shape, dtype=gpuarray.dtype,
                               buffer=shm, offset=0)  # give order?
-        self._shmrefs[gpuarray] = shmref
+        self._shmem_names[gpuarray] = shared_mem_name
+        self._shmrefs[gpuarray] = shmref  # Keep for unlinking when closing
         self.shared_arrays[gpuarray] = array
 
         #  self.unlock()
 
     def all_reduce(self, src, op, dest=None):
+        # TODO Get a hashable Theano variable and fetch pygpu internal
         # perform collective among NCCL gpu region using pygpu
         res = self._regional_comm.all_reduce(src, op, dest)
+
+        # if multi-node is needed then do the following (define better
+        # condition):
         if dest is None:
             self.new_linked_shared(res)
         else:
@@ -237,17 +242,20 @@ class Worker(object):
         first = self.send_req("platoon-am_i_first")
         if first:
             # write from gpuarray to shared memory
+            res.read(res_array)
             # ask controller to perform the same collective on shared memory
             # using MPI
-            self.send_req("platoon-all_reduce", info={'gahash': hash(res),
+            self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
                                                       'dtype': str(res.dtype),
                                                       'op': op})
         self.unlock()
 
         # simultaneously read from shared memory back to result gpuarray
         # only after region Controller has finished global collective operation
+        res.write(res_array)
 
-        pass
+        if dest is None:
+            return res
 
 ################################################################################
 #                      Old Control Interface (param sync)                      #
