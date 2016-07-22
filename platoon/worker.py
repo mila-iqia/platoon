@@ -6,7 +6,7 @@ import six
 import zmq
 from pygpu import collectives as gpucoll
 
-from mmap import mmap
+from util import mmap
 
 # You need:
 # $ conda install pyzmq cffi

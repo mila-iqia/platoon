@@ -5,7 +5,7 @@ import posix_ipc
 import zmq
 from mpi4py import MPI
 
-from mmap import mmap
+from util import mmap
 
 
 class Controller(object):

@@ -7,7 +7,8 @@ import time
 import shlex
 import argparse
 import textwrap
-import subprocess
+
+from platoon.util import launch_process
 
 
 def parse_arguments():
@@ -61,23 +62,6 @@ def parse_arguments():
                                  required=False, help='List of host names to participate in multi-node training. Each host will be assigned to a separate controller. If this option is specified, experiment will be run in multiple nodes.')
 
     return parser.parse_args()
-
-
-def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
-    print("Starting {0} on {1} ...".format(process_type, device), end=' ')
-
-    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
-    with open(log_file.format("out"), 'w') as stdout_file:
-        with open(log_file.format("err"), 'w') as stderr_file:
-            env = dict(os.environ)
-            env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
-            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name, process_type)]
-            if not args is None:
-                command += args
-            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
-
-    print("Done")
-    return process
 
 if __name__ == '__main__':
     args = parse_arguments()
