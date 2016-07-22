@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+import os
+import time
+import shlex
+import argparse
+import textwrap
+import subprocess
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=textwrap.dedent('''\
+            ####################################################################
+            #      Launcher for Platoon multi-node/GPU training framework      #
+            ####################################################################
+            Platoon will train your Theano models using many GPUs even if they
+            do not reside on the same host.
+
+            In order to work you have to provide a worker file, which defines
+            the training process of a single set of model parameters in a
+            parallel/distributed manner. Optionally and in case you want to
+            extend the distributed computation capabilities of your training
+            process, you can provide also a controller file that extends the
+            default one in the framework.
+
+            Platoon is configured through command line arguments and in case of
+            their absence (or if needed) through (hidden or visible) platoonrc
+            files. If no control arguments out of the following are provided,
+            then platoonrc is searched in current folder and then in user's home
+            folder. If even then a platoonrc file cannot be found, then
+            single-node usage is assumed with all GPU devices found on host
+            participating in the computation.
+
+            If single-node is explicitly specified, the specified devices will
+            be used in the order they are parsed. The same thing applies for
+            lists of devices found in platoonrc files.
+
+            e.g. usage: platoon2-launcher lstm -D cuda0 cuda3
+                        platoon2-launcher lstm
+
+            If multi-node is explicitly specified, appropriate platoonrc files
+            need to reside on the home folders of the specified hosts that
+            describe which devices will participate in each host. Host names are
+            given the same way they are given in MPI's `mpiexec`.
+
+            e.g. usage: platoon2-launcher lstm -H pc01 pc02
+
+            NOTIFICATION: For this launcher, currently only CUDA devices are
+            supported. For multi-gpu NVIDIA's NCCL and pygpu are required, while
+            for multi-node mpi4py is required in addition.
+            '''))
+    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+    single_or_multi = parser.add_mutually_exclusive_group(required=False)
+    single_or_multi.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
+                                 required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
+    single_or_multi.add_argument('-H', '--hosts', nargs='+', type=str, metavar='hostname',
+                                 required=False, help='List of host names to participate in multi-node training. Each host will be assigned to a separate controller. If this option is specified, experiment will be run in multiple nodes.')
+
+    return parser.parse_args()
+
+
+def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
+    print("Starting {0} on {1} ...".format(process_type, device), end=' ')
+
+    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
+    with open(log_file.format("out"), 'w') as stdout_file:
+        with open(log_file.format("err"), 'w') as stderr_file:
+            env = dict(os.environ)
+            env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
+            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name, process_type)]
+            if not args is None:
+                command += args
+            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
+
+    print("Done")
+    return process
+
+if __name__ == '__main__':
+    args = parse_arguments()
+
+    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
+    os.makedirs(logs_folder)
+
+    print("### Launching experiment: {}".format(args.experiment_name))
+    process_map = {}
+
+    p = launch_process(logs_folder, args.experiment_name, shlex.split(args.controller_args or ''), "cpu", "controller")
+    process_map[p.pid] = ('Controller', p)
+
+    for device in args.gpu_list:
+        worker_process = launch_process(logs_folder, args.experiment_name, shlex.split(args.workers_args or ''), device)
+        process_map[worker_process.pid] = ("Worker{}".format(device),
+                                           worker_process)
+
+    print("\n### Logs folder ###\n{}".format(logs_folder))
+
+    print("\n### Waiting on experiment to finish ...")
+
+    # Silly error handling but that will do for now.
+    while process_map:
+        pid, returncode = os.wait()
+        if pid not in process_map:
+            print("Recieved status for unknown process {}".format(pid))
+
+        name, p = process_map[pid]
+        del process_map[pid]
+        print("{} terminated with return code: {}.".format(name, returncode))
+        if returncode != 0:
+            print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
+            while process_map:
+                for name, p in list(process_map.values()):
+                    try:
+                        p.kill()
+                    except OSError:
+                        pass
+                    if p.poll() is not None:
+                        del process_map[p.pid]
