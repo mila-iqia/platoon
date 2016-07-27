@@ -3,6 +3,7 @@
 
 from __future__ import print_function
 import os
+import subprocess
 import time
 import shlex
 import argparse
@@ -48,13 +49,15 @@ def parse_arguments():
             describe which devices will participate in each host. Host names are
             given the same way they are given in MPI's `mpiexec`.
 
-            e.g. usage: platoon2-launcher lstm -H pc01 pc02
+            e.g. usage: platoon2-launcher lstm -nw 2 2 -H pc01 pc02
 
             NOTIFICATION: For this launcher, currently only CUDA devices are
-            supported. For multi-gpu NVIDIA's NCCL and pygpu are required, while
-            for multi-node mpi4py is required in addition.
+            supported. For multi-gpu NVIDIA's NCCL collectives library and pygpu
+            are required, while for multi-node mpi4py is required in addition.
             '''))
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+    parser.add_argument('-nw', '--workers', nargs='+', type=int, metavar='workers/host',
+                        required=False, help='List the number of workers per controller in each host.')
     single_or_multi = parser.add_mutually_exclusive_group(required=False)
     single_or_multi.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
                                  required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
@@ -66,26 +69,112 @@ def parse_arguments():
 if __name__ == '__main__':
     args = parse_arguments()
 
-    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
+    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M"))
     os.makedirs(logs_folder)
 
     print("### Launching experiment: {}".format(args.experiment_name))
+
+    # TODO check for worker executable, else fail
+    # TODO check for controller executable, else use default
+    controller_type = "platoon"
+
     process_map = {}
+    if args.hosts is not None or len(args.hosts) > 1:
+        if args.workers is None:
+            print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
+            exit(2)
 
-    p = launch_process(logs_folder, args.experiment_name, shlex.split(args.controller_args or ''), "cpu", "controller")
-    process_map[p.pid] = ('Controller', p)
+        if len(args.workers) > len(args.hosts):
+            num_of_controllers = len(args.hosts)
+            print("\nWARNING! Given more workers per host than number of hosts")
+        elif len(args.workers) < len(args.hosts):
+            num_of_controllers = len(args.workers)
+            print("\nWARNING! Given more hosts than number of 'workers per hosts'")
+        else:
+            num_of_controllers = len(args.hosts)
 
-    for device in args.gpu_list:
-        worker_process = launch_process(logs_folder, args.experiment_name, shlex.split(args.workers_args or ''), device)
-        process_map[worker_process.pid] = ("Worker{}".format(device),
-                                           worker_process)
+        num_of_workers = args.workers[:num_of_controllers]
+
+        print("### Starting multi-node/gpu training on: {} ...".format(args.hosts), end=' ')
+        log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
+        with open(log_file.format("out"), 'w') as stdout_file:
+            with open(log_file.format("err"), 'w') as stderr_file:
+                env = dict(os.environ)
+                theano_flags = "THEANO_FLAGS={},device={}".format(env.pop('THEANO_FLAGS', ''), "cpu")
+                command = ["mpiexec", "-H"]
+                command += [','.join(args.hosts[:num_of_controllers])]
+                command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
+                command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
+                # TODO find a way to tell controller how many workers will spawn
+                for i, w in enumerate(num_of_workers):
+                    command += ["python", "-u", "{}_controller.py".format(controller_type), args.experiment_name, "--multi", "-nw", str(w)]
+                    #  if args is not None:
+                    #      command += args
+                    if i != len(num_of_workers) - 1:
+                        command += ":"
+                # TODO controller configurations
+                p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+        print("Done")
+        process_map[p.pid] = ('Multi-node Controllers', p)
+    else:
+        num_of_controllers = 1
+        controller_args = [args.experiment_name, '--single']
+        if args.devices is not None:
+            if args.workers is not None:
+                if args.workers[0] > len(args.devices):
+                    print("\nWARNING! Specified more workers per host than devices. Using number of devices.")
+                    num_of_workers = len(args.devices)
+                else:
+                    num_of_workers = args.workers[0]
+            else:
+                num_of_workers = len(args.devices)
+            controller_args += ['-D']
+            controller_args += args.devices[:num_of_workers]
+            print("### Starting single-node multi-gpu training on: {}".format(args.devices))
+        else:
+            if args.workers is None:
+                print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
+            num_of_workers = args.workers[0]
+            print("### Starting single-node multi-gpu training")
+        controller_args += ["-nw", str(num_of_workers)]
+        #  if args is not None:
+        #      command += args
+
+        p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
+        process_map[p.pid] = ('Single-node Controller', p)
+
+    # TODO
+    # for every controller i, spawn num_of_workers[i]
+    # if there are no hosts, then use localhost
+
+    # if devices are known (single-node) pass them as environmentals in workers
+    # so that they won't ask their controller.
+    # worker args: single/multi, local_rank, environmental THEANO device or not
+
+    #  for device in self._device_list:
+    #      worker_process = launch_process(logs_folder, exp_name, shlex.split(args.workers_args or ''), device)
+    #      process_map[worker_process.pid] = ("Worker{}".format(device),
+    #                                          worker_process)
 
     print("\n### Logs folder ###\n{}".format(logs_folder))
 
     print("\n### Waiting on experiment to finish ...")
+    # TODO wait for executable with p.pid only
+    while process_map:
+        pid, returncode = os.waitpid(p.pid, 0)
+        if pid not in process_map:
+            print("Recieved status for unknown process {}".format(pid))
+        else:
+            name, p = process_map.pop[pid]
+
+    print("{} terminated with return code: {}.".format(name, returncode))
+    if returncode != 0:
+        print("\nERROR! An error has occurred.\nCleaning up and closing, see logs folder.")
+        exit(1)
 
     # Silly error handling but that will do for now.
     while process_map:
+        # TODO wait for executable with p.pid only
         pid, returncode = os.wait()
         if pid not in process_map:
             print("Recieved status for unknown process {}".format(pid))
@@ -94,7 +183,7 @@ if __name__ == '__main__':
         del process_map[pid]
         print("{} terminated with return code: {}.".format(name, returncode))
         if returncode != 0:
-            print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
+            print("\nERROR! An error has occurred.\nCleaning up and closing, see logs folder.")
             while process_map:
                 for name, p in list(process_map.values()):
                     try:
@@ -103,3 +192,4 @@ if __name__ == '__main__':
                         pass
                     if p.poll() is not None:
                         del process_map[p.pid]
+            exit(1)
