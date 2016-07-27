@@ -1,12 +1,33 @@
 import os
+from future.utils import raise_from
 
 import numpy
 import posix_ipc
 import six
 import zmq
-from pygpu import collectives as gpucoll
+
+try:
+    import pygpu
+    from pygpu import collectives as gpucoll
+    from pygpu.gpuarray import (GpuArrayException, UnsupportedException)
+    from theano import gpuarray
+    from gpuarray.type import (get_context, ContextNotDefined)
+except ImportError:
+    pass
 
 from util import mmap
+
+
+class PlatoonError(Exception):
+    """Exception used for most errors related to Platoon.
+    """
+    pass
+
+
+class PlatoonImplError(PlatoonError):
+    def __init__(self):
+        super(PlatoonError, self).__init__("Unknown implementation error")
+
 
 # You need:
 # $ conda install pyzmq cffi
@@ -48,13 +69,12 @@ class Worker(object):
 
     """
 
-    def __init__(self, control_port, local_rank, port=None, socket_timeout=300000, hwm=10):
+    def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
         self.context = zmq.Context()
 
         self._socket_timeout = socket_timeout
 
         self._worker_id = os.getpid()
-        self._local_rank = local_rank
 
         if port:
             self.init_mb_sock(port, hwm)
@@ -62,10 +82,11 @@ class Worker(object):
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
-        self._device_name = self.send_req("platoon-get_device",
-                                          info={'local_rank': self._local_rank})
+        #  self._device_name = self.send_req("platoon-get_device",
+        #                                    info={'local_rank': self._local_rank})
         self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
 
+        # TODO _regional_comm = None on failure, abort if new interface is used
         self._register_to_platoon()
         self._shmrefs = dict()
         self.shared_arrays = dict()
@@ -113,18 +134,32 @@ class Worker(object):
                 pass
 
     def _register_to_platoon(self):
-        # TODO Set Theano device to be used by Theano
-        # TODO Get pygpu context used by Theano
-        gpuctx = None
-        self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
-        # Ask controller for region's info to participate in
-        response = self.send_req("platoon-get_region_info",
-                                 info={'local_rank': self._local_rank,
-                                       'region_id': self._region_id.comm_id})
-        self._region_id.comm_id = bytearray(response['region_id'])
-        self._regional_comm = gpucoll.GpuComm(self._region_id,
-                                              response['region_size'],
-                                              response['regional_rank'])
+        if pygpu and gpuarray:
+            try:
+                gpuctx = get_context(None)
+            except ContextNotDefined as exc:
+                raise_from(PlatoonError("Cannot find available Theano pygpu context"), exc)
+            try:
+                self.device = gpuctx.devname
+                self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
+                # Ask controller for region's info to participate in
+                response = self.send_req("platoon-get_region_info",
+                                         info={'device': self.device,
+                                               'region_id': self._region_id.comm_id})
+                self._region_id.comm_id = bytearray(response['region_id'])
+                self._regional_comm = gpucoll.GpuComm(self._region_id,
+                                                      response['region_size'],
+                                                      response['regional_rank'])
+                self._multinode = response['multinode']
+            except UnsupportedException:
+                self._regional_comm = None
+                # TODO print warning about new interface and device
+            except GpuArrayException as exc:
+                raise_from(PlatoonError("Error in pygpu"), exc)
+            except Exception as exc:
+                raise_from(PlatoonImplError(), exc)
+        else:
+            self._regional_comm = None
 
     def init_mb_sock(self, port, hwm=10):
         """

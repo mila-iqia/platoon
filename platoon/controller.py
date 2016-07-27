@@ -1,11 +1,15 @@
 import os
+import sys
+import time
 
+from six.moves import range
+import argparse
 import numpy
 import posix_ipc
 import zmq
-from mpi4py import MPI
 
 from util import mmap
+from util import launch_process
 
 
 class Controller(object):
@@ -39,25 +43,29 @@ class Controller(object):
 
     """
 
-    def __init__(self, control_port, device_list, global_size, global_rank,
-                 port=None, hwm=10, global_comm_id=""):
+    def __init__(self, control_port, port=None, hwm=10, experiment_name="",
+                 local_size=0, device_list=list(), multinode=False):
 
         self._should_stop = False
-        self._worker_list = set()
+        self._workers = set()
         self._need_init = True
 
         self._device_list = device_list
-        # Controllers' MPI comm info
-        self._global_rank = global_rank
-        self._global_size = global_size
-        self._global_comm_id = "platoon-global_comm_" + global_comm_id
-        self._global_comm = None
-        # These 3 variables below will be used to take advantage of multi-node
-        # support of NCCL (later)
-        self._local_size = 0
+        self._local_size = local_size
         self._count_workers = 0
-        self._controller_rank = 0
-        self._region_size = 0
+
+        # New interface: Multi node
+        self._multinode = multinode
+        if self._multinode:
+            self._init_global_comm()
+
+        # New interface
+        if experiment_name:
+            logs_folder = os.path.join("PLATOON_LOGS", experiment_name, time.strftime("%Y-%m-%d_%H-%M"))
+            os.makedirs(logs_folder)
+            for i in range(self._local_size):
+                p = launch_process(logs_folder, experiment_name, None, self.device_list[i], "worker")
+                self._workers.add(p.pid)
 
         if port:
             self.init_data(port, hwm)
@@ -164,7 +172,6 @@ class Controller(object):
         """
         response = None
         if req == "platoon-get_job_uid":
-            self._local_size += 1
             response = self._job_uid
 
         elif req == "platoon-get_device":
@@ -175,15 +182,14 @@ class Controller(object):
             self._need_init = False
 
         elif req == "platoon-get_region_info":
-            # Init MPI and decide for a Platoon region on which Controller rules
-            if self._global_comm is None:
+            first = self.is_worker_first()  # See :ref:is_worker_first
+            if first:
                 self._region_id = b"platoon-" + req_info['region_id']
-                self._region_size = self._local_size
-                self._init_global_comm()  # May change region of workers to be multi-node
             response = dict()
             response['region_id'] = self._region_id
-            response['region_size'] = self._region_size
-            response['regional_rank'] = self._controller_rank + req_info['local_rank']
+            response['region_size'] = self._local_size
+            response['regional_rank'] = self._device_list.index(req_info['device'])
+            response['multinode'] = self._multinode
 
         elif req == "platoon-init_new_shmem":
             first = self.is_worker_first()  # See :ref:is_worker_first
@@ -238,7 +244,7 @@ class Controller(object):
         return False
 
     def worker_is_done(self, worker_id):
-        self._worker_list.discard(worker_id)
+        self._workers.discard(worker_id)
         self._should_stop = True
 
     def serve(self):
@@ -246,10 +252,15 @@ class Controller(object):
         This method will handle control messages until the should_stop flag
         has been raised and that all the known worker are done.
         """
-
-        while (not self._should_stop) or self._worker_list:
-            query = self.csocket.recv_json()
-            self._worker_list.add(query['worker_id'])
+        # spin spin spin
+        while (not self._should_stop) or self._workers:
+            # wait for children, learn which one exited prematurely and why,
+            # print error information about dead process and inform that we are
+            # aborting, broadcast decision to abort
+            # Abort: issue to all the rest of children to clean up and quit,
+            # then quit with fail
+            query = self.csocket.recv_json()  # Must be non blocking
+            #  self._workers.add(query['worker_id'])
 
             response = self._handle_base_control(query['req'],
                                                  query['worker_id'],
@@ -263,5 +274,54 @@ class Controller(object):
         self.csocket.close()
 
     def _init_global_comm(self):
-        # TODO
-        pass
+        # TODO abort on import failure
+        from mpi4py import MPI
+        self._global_comm = MPI.COMM_WORLD
+        self._global_size = MPI.COMM_WORLD.Get_size()
+        self._global_rank = MPI.COMM_WORLD.Get_rank()
+
+    # TODO failure cleanup workers and return
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Base Platoon Controller process. Reigns over a computer node.")
+    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+    single_or_multi = parser.add_mutually_exclusive_group(required=True)
+    single_or_multi.add_argument('--single', action='store_true',
+                                 help='Indicates that this Controller participates in a single-node platoon.')
+    single_or_multi.add_argument('--multi', action='store_false',
+                                 help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
+    parser.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
+                        required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
+    parser.add_argument('-nw', '--workers', metavar='num_of_workers',
+                        required=True, help='Number of workers spawned by this controller for this host.')
+
+    return parser.parse_args()
+
+
+def spawn_controller():
+    args = parse_arguments()
+    if args.single and args.devices is not None:
+        devices = args.devices
+    else:
+        from pygpu import gpuarray as ga
+        devcount = ga.get_device_count("cuda", 0)
+        devices = ["cuda" + str(i) for i in range(devcount)]
+        # TODO search for platoonrc or PLATOON_FLAGS
+    if args.workers > len(devices):
+        print("\nWARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)))
+        workers = len(devices)
+    else:
+        workers = args.workers
+
+    controller = Controller(control_port=5567,
+                            experiment_name=args.experiment_name,
+                            local_size=workers,
+                            device_list=devices,
+                            multinode=not args.single)
+    controller.serve()
+
+
+if __name__ == '__main__':
+    spawn_controller()
