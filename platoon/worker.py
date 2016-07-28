@@ -13,20 +13,9 @@ try:
     from theano import gpuarray
     from gpuarray.type import (get_context, ContextNotDefined)
 except ImportError:
-    pass
+    pygpu = None
 
-from util import mmap
-
-
-class PlatoonError(Exception):
-    """Exception used for most errors related to Platoon.
-    """
-    pass
-
-
-class PlatoonImplError(PlatoonError):
-    def __init__(self):
-        super(PlatoonError, self).__init__("Unknown implementation error")
+from util import (mmap, PlatoonError)
 
 
 # You need:
@@ -82,12 +71,14 @@ class Worker(object):
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
-        #  self._device_name = self.send_req("platoon-get_device",
-        #                                    info={'local_rank': self._local_rank})
         self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
 
         # TODO _regional_comm = None on failure, abort if new interface is used
-        self._register_to_platoon()
+        try:
+            self._register_to_platoon()
+        except Exception as exc:
+            # TODO log in error
+            self._regional_comm = None
         self._shmrefs = dict()
         self.shared_arrays = dict()
 
@@ -134,7 +125,7 @@ class Worker(object):
                 pass
 
     def _register_to_platoon(self):
-        if pygpu and gpuarray:
+        if pygpu:
             try:
                 gpuctx = get_context(None)
             except ContextNotDefined as exc:
@@ -151,15 +142,10 @@ class Worker(object):
                                                       response['region_size'],
                                                       response['regional_rank'])
                 self._multinode = response['multinode']
-            except UnsupportedException:
-                self._regional_comm = None
-                # TODO print warning about new interface and device
-            except GpuArrayException as exc:
-                raise_from(PlatoonError("Error in pygpu"), exc)
             except Exception as exc:
-                raise_from(PlatoonImplError(), exc)
+                raise_from(PlatoonError("Error in pygpu"), exc)
         else:
-            self._regional_comm = None
+            raise PlatoonError("pygpu or theano is not imported")
 
     def init_mb_sock(self, port, hwm=10):
         """
@@ -239,59 +225,68 @@ class Worker(object):
 #                            New Control Interface                             #
 ################################################################################
 
-    def new_linked_shared(self, gpuarray):
-        # TODO Get a hashable Theano variable and fetch pygpu internal
-        size = gpuarray.size * gpuarray.itemsize
+    def new_linked_shared(self, array):
+        # TODO
+        # GpuArray is Theano variable
+        # get internal pygpu GpuArray to use
+        # check for type alignment and contiguity
+        size = array.size * array.itemsize
         shared_mem_name = self.send_req("platoon-init_new_shmem",
                                         info={'size': size})
-        # TODO if disbanded because of an error that happened to others, raise error
 
         #  self.lock()
-
-        shmref = posix_ipc.SharedMemory(shared_mem_name)
-        shm = mmap(fd=shmref.fd, length=size)
-        shmref.close_fd()
-        array = numpy.ndarray(gpuarray.shape, dtype=gpuarray.dtype,
+        try:
+            shmref = posix_ipc.SharedMemory(shared_mem_name)
+            shm = mmap(fd=shmref.fd, length=size)
+            shmref.close_fd()
+        except Exception as exc:
+            pass  # TODO finilize, log and exit
+        array = numpy.ndarray(array.shape, dtype=array.dtype,
                               buffer=shm, offset=0)  # give order?
-        self._shmem_names[gpuarray] = shared_mem_name
-        self._shmrefs[gpuarray] = shmref  # Keep for unlinking when closing
-        self.shared_arrays[gpuarray] = array
-
+        self._shmem_names[array] = shared_mem_name
+        self._shmrefs[array] = shmref  # Keep for unlinking when closing
+        self.shared_arrays[array] = array
         #  self.unlock()
 
     def all_reduce(self, src, op, dest=None):
-        # TODO Get a hashable Theano variable and fetch pygpu internal
-        # perform collective among NCCL gpu region using pygpu
-        res = self._regional_comm.all_reduce(src, op, dest)
+        if self._regional_comm is None:
+            pass  # TODO finilize, log and exit
+        # TODO
+        # Get hashable for dest/res
+        # Get pygpu GpuArray internal from `src`
+        # Get pygpu GpuArray internal from `dest` if there is
+        # src and dest are Theano variables
+        try:
+            res = self._regional_comm.all_reduce(src, op, dest)
+        except Exception as exc:
+            pass  # TODO finilize, log and exit
 
-        # if multi-node is needed then do the following (define better
-        # condition):
-        if dest is None:
-            self.new_linked_shared(res)
-        else:
-            if dest not in self.shared_arrays:
-                self.new_linked_shared(dest)
-            res = dest
+        # if multi-node is needed then do the following
+        if self._multinode:
+            if dest is None:
+                self.new_linked_shared(res)
+            else:
+                if dest not in self.shared_arrays:
+                    self.new_linked_shared(dest)
+                res = dest
 
-        res_array = self.shared_arrays[res]
+            res_array = self.shared_arrays[res]
 
-        self.lock()
-        first = self.send_req("platoon-am_i_first")
-        # TODO if disbanded because of an error that happened to others, raise error
-        if first:
-            # write from gpuarray to shared memory
-            res.read(res_array)
-            # ask controller to perform the same collective on shared memory
-            # using MPI
-            self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
-                                                      'dtype': str(res.dtype),
-                                                      'op': op})
-            # TODO unless it was successful, raise error
-        self.unlock()
+            self.lock()
+            first = self.send_req("platoon-am_i_first")
+            if first:
+                # write from gpuarray to shared memory
+                res.read(res_array)
+                # ask controller to perform the same collective on shared memory
+                # using MPI
+                self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
+                                                          'dtype': str(res.dtype),
+                                                          'op': op})
+            self.unlock()
 
-        # simultaneously read from shared memory back to result gpuarray
-        # only after region Controller has finished global collective operation
-        res.write(res_array)
+            # simultaneously read from shared memory back to result gpuarray
+            # only after region Controller has finished global collective operation
+            res.write(res_array)
 
         if dest is None:
             return res

@@ -8,8 +8,13 @@ import numpy
 import posix_ipc
 import zmq
 
-from util import mmap
-from util import launch_process
+try:
+    from mpi4py import MPI
+except ImportError:
+    MPI = None
+
+from util import (PlatoonError, PlatoonImplError, mmap, launch_process,
+                  op_to_mpi, dtype_to_mpi)
 
 
 class Controller(object):
@@ -57,7 +62,11 @@ class Controller(object):
         # New interface: Multi node
         self._multinode = multinode
         if self._multinode:
-            self._init_global_comm()
+            try:
+                self._init_global_comm()
+            except PlatoonError as exc:
+                # TODO finilize, log and exit
+                pass
 
         # New interface
         if experiment_name:
@@ -159,9 +168,8 @@ class Controller(object):
         encoding and the network.
 
         """
-        raise NotImplementedError("The Controller class should not be "
-                                  "instantiated directly. Classes that "
-                                  "inherit from Controller should override "
+        raise NotImplementedError("Classes that "
+                                  "inherit from Controller should probably override "
                                   "the method `handle_control()`")
 
     def _handle_base_control(self, req, worker_id, req_info):
@@ -202,11 +210,14 @@ class Controller(object):
                     pass
 
                 size = req_info['size']
-                self._last_shmref = posix_ipc.SharedMemory(self._last_shmem_name,
-                                                           posix_ipc.O_CREAT,
-                                                           size=size)
-                self._last_shm = mmap(fd=self._last_shmref.fd, length=size)
-                self._last_shmref.close_fd()
+                try:
+                    self._last_shmref = posix_ipc.SharedMemory(self._last_shmem_name,
+                                                               posix_ipc.O_CREAT,
+                                                               size=size)
+                    self._last_shm = mmap(fd=self._last_shmref.fd, length=size)
+                    self._last_shmref.close_fd()
+                except Exception as exc:
+                    pass  # TODO finilize, log and exit
                 # We want every worker to get the same shared memory name that is
                 # was declared in the first call of a mass request to this
                 # controller for initializing a new shared memory.
@@ -219,15 +230,18 @@ class Controller(object):
             response = self.is_worker_first()  # See :ref:is_worker_first
 
         elif req == "platoon-all_reduce":
+            if not self._multinode:
+                pass  # TODO finilize, log and exit
             dtype = req_info['dtype']
             op = req_info['op']
             array = self.shared_buffers[req_info['shmem']]
-            #  mpi_dtype = dtype_to_mpi(dtype)  # TODO
-            #  mpi_op = op_to_mpi(op)  # TODO
-            self._global_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
-                                        op=mpi_op)
-            # TODO add try/raise/finally and respond with success or failure to
-            # worker
+            try:
+                mpi_op = op_to_mpi(op)
+                mpi_dtype = dtype_to_mpi(dtype)
+                self._global_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
+                                            op=mpi_op)
+            except Exception as exc:
+                pass  # TODO finilize, log and exit
 
         return response
 
@@ -274,8 +288,8 @@ class Controller(object):
         self.csocket.close()
 
     def _init_global_comm(self):
-        # TODO abort on import failure
-        from mpi4py import MPI
+        if MPI is None:
+            raise PlatoonError("mpi4py is not imported")
         self._global_comm = MPI.COMM_WORLD
         self._global_size = MPI.COMM_WORLD.Get_size()
         self._global_rank = MPI.COMM_WORLD.Get_rank()
