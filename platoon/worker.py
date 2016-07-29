@@ -73,7 +73,6 @@ class Worker(object):
         self._job_uid = self.send_req("platoon-get_job_uid")
         self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
 
-        # TODO _regional_comm = None on failure, abort if new interface is used
         try:
             self._register_to_platoon()
         except Exception as exc:
@@ -106,7 +105,7 @@ class Worker(object):
         if socks and socks.get(self.csocket) == zmq.POLLIN:
             return self.csocket.recv_json()
         else:
-            raise Exception("Control Socket: recv timeout")
+            raise PlatoonError("Control Socket: recv timeout")
 
     def close(self):
         if hasattr(self, 'asocket'):
@@ -121,6 +120,11 @@ class Worker(object):
                 pass
             try:
                 self._shmref.unlink()
+            except posix_ipc.ExistentialError:
+                pass
+        for shmref in self._shmrefs.values():
+            try:
+                shmref.unlink()
             except posix_ipc.ExistentialError:
                 pass
 
@@ -240,7 +244,11 @@ class Worker(object):
             shm = mmap(fd=shmref.fd, length=size)
             shmref.close_fd()
         except Exception as exc:
-            pass  # TODO finilize, log and exit
+            try:
+                shm.unlink()
+            except posix_ipc.ExistentialError:
+                pass
+            raise_from(PlatoonError("Error while getting access to shared memory"), exc)
         array = numpy.ndarray(array.shape, dtype=array.dtype,
                               buffer=shm, offset=0)  # give order?
         self._shmem_names[array] = shared_mem_name
@@ -250,7 +258,7 @@ class Worker(object):
 
     def all_reduce(self, src, op, dest=None):
         if self._regional_comm is None:
-            pass  # TODO finilize, log and exit
+            raise PlatoonError("New interface is not available. Check log.")
         # TODO
         # Get hashable for dest/res
         # Get pygpu GpuArray internal from `src`
@@ -259,7 +267,7 @@ class Worker(object):
         try:
             res = self._regional_comm.all_reduce(src, op, dest)
         except Exception as exc:
-            pass  # TODO finilize, log and exit
+            raise_from(PlatoonError("Error in pygpu all_reduce"), exc)
 
         # if multi-node is needed then do the following
         if self._multinode:
