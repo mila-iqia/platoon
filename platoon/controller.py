@@ -275,31 +275,32 @@ class Controller(object):
         # spin spin spin
         try:
             #  while (not self._should_stop) or self._workers:
-            while self._workers:
-                # wait for children, learn which one exited prematurely and why,
-                # print error information about dead process and inform that we are
-                # aborting, broadcast decision to abort
-                # Abort: issue to all the rest of children to clean up and quit,
-                # then quit with fail
+            while self._workers:  # spin while we have still children to watch for
                 try:
                     pid, status = os.waitpid(-1, os.WNOHANG)
                 except OSError as exc:
                     raise PlatoonFail()
-                if pid != 0:
+                if pid != 0:  # If a status change has happened at a child
                     if os.WIFEXITED(status):
                         self._workers.discard(pid)
                         self._success = os.WEXITSTATUS(status)
                         if self._success == 0:
+                            # A worker has terminated normally. Other workers
+                            # are expected to terminate normally too, so
+                            # continue.
                             continue
                         else:
+                            # A worker has not terminated normally due to an
+                            # error or an irrecovable fault
                             raise PlatoonFail()
-                    else:
+                    else:  # other status changes are not desirable
                         raise PlatoonFail()
                 try:
                     query = self.csocket.recv_json(flags=zmq.NOBLOCK)
-                except zmq.Again:
+                except zmq.Again:  # if a query has not happened, try again
                     continue
 
+                # try default interface, it may raise PlatoonFail
                 response = self._handle_base_control(query['req'],
                                                      query['worker_id'],
                                                      query['req_info'])
@@ -309,9 +310,9 @@ class Controller(object):
                                                    query['req_info'])
 
                 self.csocket.send_json(response)
-        except PlatoonFail:
+        except PlatoonFail:  # if platoon fails kill all children workers
             self._kill_workers()
-        finally:
+        finally:  # Close sockets and unlink for shared memory
             self._close()
         return self._success
 
