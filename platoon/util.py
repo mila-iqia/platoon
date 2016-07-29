@@ -15,6 +15,11 @@ class PlatoonError(Exception):
     """
     pass
 
+class PlatoonFail(Exception):
+    def __init__(self):
+        super(PlatoonError, self).__init__("One or more processes in host have "
+                                           "exited. Platoon has failed. Check logs.")
+
 
 def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
     _ffi = cffi.FFI()

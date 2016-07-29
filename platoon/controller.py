@@ -13,7 +13,7 @@ try:
 except ImportError:
     MPI = None
 
-from util import (PlatoonError, PlatoonImplError, mmap, launch_process,
+from util import (PlatoonError, PlatoonFail, mmap, launch_process,
                   op_to_mpi, dtype_to_mpi)
 
 
@@ -65,7 +65,7 @@ class Controller(object):
             try:
                 self._init_global_comm()
             except PlatoonError as exc:
-                # TODO finilize, log and exit
+                # TODO log error
                 pass
 
         # New interface
@@ -113,8 +113,8 @@ class Controller(object):
             High water mark, see the pyzmq docs.
 
         """
-        acontext = zmq.Context()
-        self.asocket = acontext.socket(zmq.PUSH)
+        self.acontext = zmq.Context()
+        self.asocket = self.acontext.socket(zmq.PUSH)
         self.asocket.set_hwm(hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
 
@@ -130,8 +130,8 @@ class Controller(object):
             The port to listen on.
 
         """
-        ccontext = zmq.Context()
-        self.csocket = ccontext.socket(zmq.REP)
+        self.ccontext = zmq.Context()
+        self.csocket = self.ccontext.socket(zmq.REP)
         self.csocket.bind('tcp://*:{}'.format(port))
 
     def send_mb(self, arrays):
@@ -211,19 +211,23 @@ class Controller(object):
 
                 size = req_info['size']
                 try:
-                    self._last_shmref = posix_ipc.SharedMemory(self._last_shmem_name,
-                                                               posix_ipc.O_CREAT,
-                                                               size=size)
-                    self._last_shm = mmap(fd=self._last_shmref.fd, length=size)
-                    self._last_shmref.close_fd()
+                    shmref = posix_ipc.SharedMemory(self._last_shmem_name,
+                                                    posix_ipc.O_CREAT,
+                                                    size=size)
+                    shm = mmap(fd=self._last_shmref.fd, length=size)
+                    shmref.close_fd()
                 except Exception as exc:
-                    pass  # TODO finilize, log and exit
+                    try:
+                        shm.unlink()
+                    except posix_ipc.ExistentialError:
+                        pass
+                    raise PlatoonFail()
                 # We want every worker to get the same shared memory name that is
                 # was declared in the first call of a mass request to this
                 # controller for initializing a new shared memory.
-                self._shmrefs[self._last_shmem_name] = self._last_shmref
+                self._shmrefs[self._last_shmem_name] = shmref
                 # Keep for unlinking when closing
-                self.shared_buffers[self._last_shmem_name] = self._last_shm
+                self.shared_buffers[self._last_shmem_name] = shm
             response = self._last_shmem_name
 
         elif req == "platoon-am_i_first":
@@ -231,7 +235,9 @@ class Controller(object):
 
         elif req == "platoon-all_reduce":
             if not self._multinode:
-                pass  # TODO finilize, log and exit
+                raise PlatoonFail()
+            if MPI is None:
+                raise PlatoonFail()
             dtype = req_info['dtype']
             op = req_info['op']
             array = self.shared_buffers[req_info['shmem']]
@@ -241,7 +247,7 @@ class Controller(object):
                 self._global_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
                                             op=mpi_op)
             except Exception as exc:
-                pass  # TODO finilize, log and exit
+                raise PlatoonFail()
 
         return response
 
@@ -257,9 +263,9 @@ class Controller(object):
             return True
         return False
 
-    def worker_is_done(self, worker_id):
-        self._workers.discard(worker_id)
-        self._should_stop = True
+    #  def worker_is_done(self, worker_id):
+    #      self._workers.discard(worker_id)
+    #      self._should_stop = True
 
     def serve(self):
         """
@@ -267,25 +273,47 @@ class Controller(object):
         has been raised and that all the known worker are done.
         """
         # spin spin spin
-        while (not self._should_stop) or self._workers:
-            # wait for children, learn which one exited prematurely and why,
-            # print error information about dead process and inform that we are
-            # aborting, broadcast decision to abort
-            # Abort: issue to all the rest of children to clean up and quit,
-            # then quit with fail
-            query = self.csocket.recv_json()  # Must be non blocking
-            #  self._workers.add(query['worker_id'])
+        try:
+            #  while (not self._should_stop) or self._workers:
+            while self._workers:
+                # wait for children, learn which one exited prematurely and why,
+                # print error information about dead process and inform that we are
+                # aborting, broadcast decision to abort
+                # Abort: issue to all the rest of children to clean up and quit,
+                # then quit with fail
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except OSError as exc:
+                    raise PlatoonFail()
+                if pid != 0:
+                    if os.WIFEXITED(status):
+                        self._workers.discard(pid)
+                        self._success = os.WEXITSTATUS(status)
+                        if self._success == 0:
+                            continue
+                        else:
+                            raise PlatoonFail()
+                    else:
+                        raise PlatoonFail()
+                try:
+                    query = self.csocket.recv_json(flags=zmq.NOBLOCK)
+                except zmq.Again:
+                    continue
 
-            response = self._handle_base_control(query['req'],
-                                                 query['worker_id'],
-                                                 query['req_info'])
-            if response is None:
-                response = self.handle_control(query['req'],
-                                               query['worker_id'],
-                                               query['req_info'])
+                response = self._handle_base_control(query['req'],
+                                                     query['worker_id'],
+                                                     query['req_info'])
+                if response is None:
+                    response = self.handle_control(query['req'],
+                                                   query['worker_id'],
+                                                   query['req_info'])
 
-            self.csocket.send_json(response)
-        self.csocket.close()
+                self.csocket.send_json(response)
+        except PlatoonFail:
+            self._kill_workers()
+        finally:
+            self._close()
+        return self._success
 
     def _init_global_comm(self):
         if MPI is None:
@@ -294,7 +322,28 @@ class Controller(object):
         self._global_size = MPI.COMM_WORLD.Get_size()
         self._global_rank = MPI.COMM_WORLD.Get_rank()
 
-    # TODO failure cleanup workers and return
+    def _kill_workers(self):
+        import signal
+        while self._workers:
+            pid = self._workers.pop()
+            os.kill(pid, signal.SIGINT)
+
+    def _close(self):
+        self.csocket.close()
+        self.ccontext.term()
+        if hasattr(self, 'asocket'):
+            self.asocket.close()
+            self.acontext.term()
+        self._lock.close()
+        try:
+            self._lock.unlink()
+        except posix_ipc.ExistentialError:
+            pass
+        for shmref in self._shmrefs.values():
+            try:
+                shmref.unlink()
+            except posix_ipc.ExistentialError:
+                pass
 
 
 def parse_arguments():
@@ -334,7 +383,7 @@ def spawn_controller():
                             local_size=workers,
                             device_list=devices,
                             multinode=not args.single)
-    controller.serve()
+    return controller.serve()
 
 
 if __name__ == '__main__':
