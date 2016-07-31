@@ -1,4 +1,6 @@
 import os
+import sys
+import signal
 from future.utils import raise_from
 
 import numpy
@@ -81,6 +83,8 @@ class Worker(object):
         self._shmrefs = dict()
         self.shared_arrays = dict()
 
+        signal.signal(signal.SIGINT, self._handle_force_close)
+
     def send_req(self, req, info=None):
         """
         Send a control request.
@@ -106,6 +110,16 @@ class Worker(object):
             return self.csocket.recv_json()
         else:
             raise PlatoonError("Control Socket: recv timeout")
+
+    def _handle_force_close(self, signum, frame):
+        """Handle SIGINT signals from Controller.
+
+        This is expected to happen when something abnormal has happened in other
+        workers which implies that training procedure should stop and fail.
+
+        """
+        self.close()
+        sys.exit(-1)  # Exit normally with non success value.
 
     def close(self):
         if hasattr(self, 'asocket'):

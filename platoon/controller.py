@@ -328,6 +328,7 @@ class Controller(object):
         while self._workers:
             pid = self._workers.pop()
             os.kill(pid, signal.SIGINT)
+            pid, status = os.waitpid(pid, 0)
 
     def _close(self):
         self.csocket.close()
