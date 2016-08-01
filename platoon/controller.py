@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 import time
 
 from six.moves import range
@@ -50,7 +51,6 @@ class Controller(object):
 
     def __init__(self, control_port, port=None, hwm=10, experiment_name="",
                  local_size=0, device_list=list(), multinode=False):
-
         self._should_stop = False
         self._workers = set()
         self._need_init = True
@@ -64,6 +64,7 @@ class Controller(object):
         if self._multinode:
             try:
                 self._init_global_comm()
+                signal.signal(signal.SIGTERM, self._handle_force_close)
             except PlatoonError as exc:
                 # TODO log error
                 pass
@@ -299,6 +300,8 @@ class Controller(object):
                     query = self.csocket.recv_json(flags=zmq.NOBLOCK)
                 except zmq.Again:  # if a query has not happened, try again
                     continue
+                except zmq.ZMQError as exc:
+                    raise PlatoonFail()
 
                 # try default interface, it may raise PlatoonFail
                 response = self._handle_base_control(query['req'],
@@ -310,8 +313,10 @@ class Controller(object):
                                                    query['req_info'])
 
                 self.csocket.send_json(response)
-        except PlatoonFail:  # if platoon fails kill all children workers
+        except PlatoonFail as exc:  # if platoon fails kill all children workers
             self._kill_workers()
+            if self._multinode:
+                self._global_comm.Abort(errorcode=-1)
         finally:  # Close sockets and unlink for shared memory
             self._close()
         return self._success
@@ -324,7 +329,6 @@ class Controller(object):
         self._global_rank = MPI.COMM_WORLD.Get_rank()
 
     def _kill_workers(self):
-        import signal
         while self._workers:
             pid = self._workers.pop()
             os.kill(pid, signal.SIGINT)
@@ -346,6 +350,18 @@ class Controller(object):
                 shmref.unlink()
             except posix_ipc.ExistentialError:
                 pass
+
+    def _handle_force_close(self, signum, frame):
+        """Handle SIGTERM signals from MPI.Abort
+
+        This is expected to happen when something abnormal has happened in other
+        controllers over MPI.COMM_WORLD across host which participate in the
+        multi-node training.
+
+        """
+        self._kill_workers()
+        self._close()
+        sys.exit(-1)
 
 
 def parse_arguments():
