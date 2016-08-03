@@ -11,9 +11,8 @@ import zmq
 try:
     import pygpu
     from pygpu import collectives as gpucoll
-    from pygpu.gpuarray import (GpuArrayException, UnsupportedException)
-    from theano import gpuarray
-    from gpuarray.type import (get_context, ContextNotDefined)
+    from pygpu import gpuarray as pygpuga
+    from theano import gpuarray as theanoga
 except ImportError:
     pygpu = None
 
@@ -80,6 +79,7 @@ class Worker(object):
         except Exception as exc:
             # TODO log in error
             self._regional_comm = None
+        self._shmem_names = dict()
         self._shmrefs = dict()
         self.shared_arrays = dict()
 
@@ -126,6 +126,7 @@ class Worker(object):
             self.asocket.close()
         if hasattr(self, 'csocket'):
             self.csocket.close()
+        self.context.term()
         if hasattr(self, '_shmref'):
             self._lock.close()
             try:
@@ -145,8 +146,8 @@ class Worker(object):
     def _register_to_platoon(self):
         if pygpu:
             try:
-                gpuctx = get_context(None)
-            except ContextNotDefined as exc:
+                gpuctx = theanoga.get_context(None)
+            except theanoga.ContextNotDefined as exc:
                 raise_from(PlatoonError("Cannot find available Theano pygpu context"), exc)
             try:
                 self.device = gpuctx.devname
@@ -244,15 +245,43 @@ class Worker(object):
 ################################################################################
 
     def new_linked_shared(self, array):
-        # TODO
-        # GpuArray is Theano variable
-        # get internal pygpu GpuArray to use
-        # check for type alignment and contiguity
-        size = array.size * array.itemsize
+        """Creates a new posix shared memory buffer to be shared among Workers
+        and their Controller and maps `array` to that buffer.
+
+        Controller is requested to create a new shared memory buffer with the
+        same size as `array` in order to be used in multi-node/gpu platoon
+        collective operations through the new worker interface. All participants
+        in a host have access to that memory.
+
+        :param array: will correspond to shared buffer in host with the same size
+        :type array: :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+
+        Notes
+        -----
+        For internals: There should probably be a barrier across hosts' worker
+        here to ensure that so far, controller has serviced all workers (if
+        needed) a new shared memory's name. This is due to the fact that
+        Controller can service one Worker at a time and a platoon collective
+        service is a blocking one across Controllers. Current implementation
+        is valid because calls to pygpu.collectives interface are blocking
+        across workers.
+
+        """
+        if isinstance(array, theanoga.GpuArraySharedVariable):
+            internal = array.get_value(borrow=True, return_internal_type=True)
+        else:
+            raise PlatoonError("array input is not theano.gpuarray.GpuArraySharedVariable")
+
+        size = internal.size * internal.itemsize
+        if internal.flags['F']:
+            order = 'F'
+        else:
+            order = 'C'
+
+        #  self.lock()
         shared_mem_name = self.send_req("platoon-init_new_shmem",
                                         info={'size': size})
 
-        #  self.lock()
         try:
             shmref = posix_ipc.SharedMemory(shared_mem_name)
             shm = mmap(fd=shmref.fd, length=size)
@@ -263,34 +292,72 @@ class Worker(object):
             except posix_ipc.ExistentialError:
                 pass
             raise_from(PlatoonError("Error while getting access to shared memory"), exc)
-        array = numpy.ndarray(array.shape, dtype=array.dtype,
-                              buffer=shm, offset=0)  # give order?
+        shared_array = numpy.ndarray(internal.shape, dtype=internal.dtype,
+                                     buffer=shm, offset=0, order=order)
         self._shmem_names[array] = shared_mem_name
         self._shmrefs[array] = shmref  # Keep for unlinking when closing
-        self.shared_arrays[array] = array
+        self.shared_arrays[array] = shared_array
         #  self.unlock()
 
     def all_reduce(self, src, op, dest=None):
+        """AllReduce collective operation for workers in a multi-node/gpu platoon.
+
+        Parameters
+        ----------
+        src: :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+            Array to be reduced.
+        op: string
+            Key indicating operation type. See :ref:`pygpu.collectives.TO_RED_OP`
+        dest: :ref:`theano.gpuarray.type.GpuArraySharedVariable`, optional
+            Array to collect reduce operation result.
+
+        Returns
+        -------
+        result: None or :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+            New Theano gpu shared variable which contains operation result \
+            if `dest` is None, else nothing.
+
+        Warning
+        -------
+        Repeated unnecessary calls with no `dest`, where a logically valid
+        Theano gpu shared variable exists, leads to poorly performing code.
+        Also, workers are expected to make homogenous calls to this API. It will
+        not work currently for heterogenous calls.
+
+        """
+
         if self._regional_comm is None:
             raise PlatoonError("New interface is not available. Check log.")
-        # TODO
-        # Get hashable for dest/res
-        # Get pygpu GpuArray internal from `src`
-        # Get pygpu GpuArray internal from `dest` if there is
-        # src and dest are Theano variables
+
+        if isinstance(src, theanoga.GpuArraySharedVariable):
+            internal_src = src.get_value(borrow=True, return_internal_type=True)
+        else:
+            raise PlatoonError("src input is not theano.gpuarray.GpuArraySharedVariable")
+
+        if dest is not None:
+            if isinstance(dest, theanoga.GpuArraySharedVariable):
+                internal_dest = dest.get_value(borrow=True, return_internal_type=True)
+            else:
+                raise PlatoonError("dest input is not theano.gpuarray.GpuArraySharedVariable")
+        else:
+            internal_dest = None
+
         try:
-            res = self._regional_comm.all_reduce(src, op, dest)
+            internal_res = self._regional_comm.all_reduce(internal_src,
+                                                          op, internal_dest)
         except Exception as exc:
             raise_from(PlatoonError("Error in pygpu all_reduce"), exc)
 
         # if multi-node is needed then do the following
         if self._multinode:
             if dest is None:
+                res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
                 self.new_linked_shared(res)
             else:
                 if dest not in self.shared_arrays:
                     self.new_linked_shared(dest)
                 res = dest
+                internal_res = internal_dest
 
             res_array = self.shared_arrays[res]
 
@@ -298,17 +365,17 @@ class Worker(object):
             first = self.send_req("platoon-am_i_first")
             if first:
                 # write from gpuarray to shared memory
-                res.read(res_array)
+                internal_res.read(res_array)
                 # ask controller to perform the same collective on shared memory
                 # using MPI
                 self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
-                                                          'dtype': str(res.dtype),
+                                                          'dtype': str(internal_res.dtype),
                                                           'op': op})
             self.unlock()
 
             # simultaneously read from shared memory back to result gpuarray
             # only after region Controller has finished global collective operation
-            res.write(res_array)
+            internal_res.write(res_array)
 
         if dest is None:
             return res

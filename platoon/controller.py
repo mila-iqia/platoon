@@ -57,7 +57,9 @@ class Controller(object):
 
         self._device_list = device_list
         self._local_size = local_size
-        self._count_workers = 0
+        self._get_region_info_count = 0
+        self._init_new_shmem_count = 0
+        self._am_i_first_count = 0
 
         # New interface: Multi node
         self._multinode = multinode
@@ -191,7 +193,7 @@ class Controller(object):
             self._need_init = False
 
         elif req == "platoon-get_region_info":
-            first = self.is_worker_first()  # See :ref:is_worker_first
+            first = self.is_worker_first(self._get_region_info_count)  # See :ref:is_worker_first
             if first:
                 self._region_id = b"platoon-" + req_info['region_id']
             response = dict()
@@ -201,7 +203,7 @@ class Controller(object):
             response['multinode'] = self._multinode
 
         elif req == "platoon-init_new_shmem":
-            first = self.is_worker_first()  # See :ref:is_worker_first
+            first = self.is_worker_first(self._init_new_shmem_count)  # See :ref:is_worker_first
             if first:
                 self._last_shmem_name = "platoon-{0}_{1}_buffer".format(self._job_uid,
                                                                         len(self.shared_buffers))
@@ -232,7 +234,7 @@ class Controller(object):
             response = self._last_shmem_name
 
         elif req == "platoon-am_i_first":
-            response = self.is_worker_first()  # See :ref:is_worker_first
+            response = self.is_worker_first(self._am_i_first_count)  # See :ref:is_worker_first
 
         elif req == "platoon-all_reduce":
             if not self._multinode:
@@ -252,15 +254,15 @@ class Controller(object):
 
         return response
 
-    def is_worker_first(self):
+    def is_worker_first(self, counter):
         """Returns True, if in a mass request in a local platoon (workers in a
         single host) a worker's request reaches first its controller
 
         This will work only if every single worker participates successfully each
         time in a concurrent request of the same type to their controller.
         """
-        self._count_workers = (self._count_workers + 1) % self._local_size
-        if self._count_workers == 1:
+        counter = (counter + 1) % self._local_size
+        if counter == 1:
             return True
         return False
 
