@@ -21,6 +21,7 @@ from __future__ import print_function
 import os
 import sys
 import subprocess
+import signal
 import time
 import shlex
 import argparse

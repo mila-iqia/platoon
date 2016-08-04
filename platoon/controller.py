@@ -20,7 +20,7 @@ from util import (PlatoonError, PlatoonFail, mmap, launch_process,
 
 class Controller(object):
     """
-    Abstract multi-process controller
+    General multi-process controller
 
     This class provides the necessary features to dispatch data mini-batches
     to workers and handle control requests. Using this class should be done
@@ -385,13 +385,23 @@ def parse_arguments():
 
 def spawn_controller():
     args = parse_arguments()
+
+    # Get Controller's devices
     if args.single and args.devices is not None:
+        # 1. Use device names from arguments if they are specified
         devices = args.devices
     else:
-        from pygpu import gpuarray as ga
-        devcount = ga.get_device_count("cuda", 0)
-        devices = ["cuda" + str(i) for i in range(devcount)]
-        # TODO search for platoonrc or PLATOON_FLAGS
+        # 2. Try device names from configuration
+        from platoon import configparser
+        import socket
+        try:
+            devices = configparser.fetch_devices_for_host(socket.gethostname())
+        except KeyError:
+            # 3. Else use all compatible GPUs in host
+            from pygpu import gpuarray as ga
+            devcount = ga.get_device_count("cuda", 0)
+            devices = ["cuda" + str(i) for i in range(devcount)]
+
     if args.workers > len(devices):
         print("\nWARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)))
         workers = len(devices)
@@ -407,4 +417,6 @@ def spawn_controller():
 
 
 if __name__ == '__main__':
-    spawn_controller()
+    rcode = spawn_controller()
+    if rcode != 0:
+        sys.exit(1)
