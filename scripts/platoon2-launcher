@@ -1,5 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+platoon2-launcher
+
+This file serves as an executable for launching a training procedure with
+Platoon. Depending on the given arguments or configuration, the training will
+start in a single machine or multiple hosts. Execute `platoon2-launcher -h` to
+see instructions or read the docs.
+
+Exit Codes
+----------
+0: Success
+1: A worker or controller has exited with non-success status
+2: False arguments
+3: Subprocess or OS errors
+
+"""
 
 from __future__ import print_function
 import os
@@ -11,6 +27,7 @@ import argparse
 import textwrap
 
 from platoon.util import launch_process
+from platoon import configparser
 
 
 def parse_arguments():
@@ -83,20 +100,30 @@ if __name__ == '__main__':
     # so far this launcher supports only default controller type: platoon
     controller_type = "platoon"
 
-    process_map = {}
-    if args.hosts is not None or len(args.hosts) > 1:
+    # If not specified in launcher, check for other configuration types
+    if args.hosts is None:
+        try:
+            hosts = configparser.fetch_hosts()
+        except KeyError:
+            hosts = None
+    else:
+        hosts = args.hosts
+
+    # Check if we run on multi-node
+    if hosts is not None and len(hosts) > 1:
+        # On multi-node, user must specify number of workers per controller
         if args.workers is None:
             print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
             sys.exit(2)
 
-        if len(args.workers) > len(args.hosts):
-            num_of_controllers = len(args.hosts)
+        if len(args.workers) > len(hosts):
+            num_of_controllers = len(hosts)
             print("\nWARNING! Given more workers per host than number of hosts")
-        elif len(args.workers) < len(args.hosts):
+        elif len(args.workers) < len(hosts):
             num_of_controllers = len(args.workers)
             print("\nWARNING! Given more hosts than number of 'workers per hosts'")
         else:
-            num_of_controllers = len(args.hosts)
+            num_of_controllers = len(hosts)
 
         num_of_workers = args.workers[:num_of_controllers]
 
@@ -105,22 +132,29 @@ if __name__ == '__main__':
         with open(log_file.format("out"), 'w') as stdout_file:
             with open(log_file.format("err"), 'w') as stderr_file:
                 env = dict(os.environ)
-                theano_flags = "THEANO_FLAGS={},device={}".format(env.pop('THEANO_FLAGS', ''), "cpu")
+                theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
                 command = ["mpiexec", "-H"]
                 command += [','.join(args.hosts[:num_of_controllers])]
                 command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
                 command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
-                # TODO find a way to tell controller how many workers will spawn
                 for i, w in enumerate(num_of_workers):
-                    command += ["python", "-u", "{}_controller.py".format(controller_type), args.experiment_name, "--multi", "-nw", str(w)]
+                    command += ["python", "-u", "{}_controller.py".format(controller_type),
+                                args.experiment_name, "--multi", "-nw", str(w)]
+                    # TODO Support controller args
                     #  if args is not None:
                     #      command += args
                     if i != len(num_of_workers) - 1:
                         command += ":"
-                # TODO controller configurations
-                p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+                try:
+                    p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+                except OSError as exc:
+                    print("\nERROR! OS error in Popen: {}".format(exc))
+                    sys.exit(3)
+                except Exception as exc:
+                    print("\nERROR! Other in Popen: {}".format(exc))
+                    sys.exit(3)
         print("Done")
-        process_map[p.pid] = ('Multi-node Controllers', p)
+        experiment_type = "Multi-node Controllers"
     else:
         num_of_controllers = 1
         controller_args = [args.experiment_name, '--single']
@@ -142,59 +176,43 @@ if __name__ == '__main__':
             num_of_workers = args.workers[0]
             print("### Starting single-node multi-gpu training")
         controller_args += ["-nw", str(num_of_workers)]
+        # TODO Support controller args
         #  if args is not None:
         #      command += args
 
-        p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
-        process_map[p.pid] = ('Single-node Controller', p)
-
-    # TODO
-    # for every controller i, spawn num_of_workers[i]
-    # if there are no hosts, then use localhost
-
-    # if devices are known (single-node) pass them as environmentals in workers
-    # so that they won't ask their controller.
-    # worker args: single/multi, local_rank, environmental THEANO device or not
-
-    #  for device in self._device_list:
-    #      worker_process = launch_process(logs_folder, exp_name, shlex.split(args.workers_args or ''), device)
-    #      process_map[worker_process.pid] = ("Worker{}".format(device),
-    #                                          worker_process)
+        try:
+            p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
+        except OSError as exc:
+            print("\nERROR! OS error in Popen: {}".format(exc))
+            sys.exit(3)
+        except Exception as exc:
+            print("\nERROR! Other in Popen: {}".format(exc))
+            sys.exit(3)
+        experiment_type = "Single-node Controller"
 
     print("\n### Logs folder ###\n{}".format(logs_folder))
-
     print("\n### Waiting on experiment to finish ...")
-    # TODO wait for executable with p.pid only
-    while process_map:
-        pid, returncode = os.waitpid(p.pid, 0)
-        if pid not in process_map:
-            print("Recieved status for unknown process {}".format(pid))
+    try:
+        pid, status = os.waitpid(p.pid, 0)
+    except OSError as exc:
+        print("\nERROR! OS error: {}".format(exc))
+        sys.exit(3)
+    if pid != p.pid:
+        print("\nWARNING! Received status for unknown process {}".format(pid))
+        sys.exit(3)
+    if os.WIFEXITED(status):
+        rcode = os.WEXITSTATUS(status)
+        print("## {0} terminated with return code: {1}.".format(experiment_type, rcode))
+        if rcode != 0:
+            print("\nERROR! An error has occured.\nSee logs for more info.")
+            sys.exit(1)
         else:
-            name, p = process_map.pop[pid]
-
-    print("{} terminated with return code: {}.".format(name, returncode))
-    if returncode != 0:
-        print("\nERROR! An error has occurred.\nCleaning up and closing, see logs folder.")
-        exit(1)
-
-    # Silly error handling but that will do for now.
-    while process_map:
-        # TODO wait for executable with p.pid only
-        pid, returncode = os.wait()
-        if pid not in process_map:
-            print("Recieved status for unknown process {}".format(pid))
-
-        name, p = process_map[pid]
-        del process_map[pid]
-        print("{} terminated with return code: {}.".format(name, returncode))
-        if returncode != 0:
-            print("\nERROR! An error has occurred.\nCleaning up and closing, see logs folder.")
-            while process_map:
-                for name, p in list(process_map.values()):
-                    try:
-                        p.kill()
-                    except OSError:
-                        pass
-                    if p.poll() is not None:
-                        del process_map[p.pid]
-            exit(1)
+            print("\nSUCCESS! Training with platoon has finished.")
+    else:
+        print("\nWARNING! {} changed status but has not exited.".format(experiment_type))
+        try:
+            os.kill(pid, signal.SIGTERM)
+            pid, status = os.waitpid(pid, 0)
+        except OSError as exc:
+            print("\nERROR! OS error: {}".format(exc))
+        sys.exit(3)
