@@ -3,6 +3,7 @@
 
 from __future__ import print_function
 import os
+import sys
 import subprocess
 import time
 import shlex
@@ -74,15 +75,19 @@ if __name__ == '__main__':
 
     print("### Launching experiment: {}".format(args.experiment_name))
 
-    # TODO check for worker executable, else fail
-    # TODO check for controller executable, else use default
+    # check for worker executable, else fail
+    if not os.path.isfile("./{}_worker.py".format(args.experiment_name)):
+        print("\nERROR! Cannot find worker executable: {}_worker.py".format(args.experiment_name))
+        sys.exit(2)
+    # TODO check for custom controller executable, else use default
+    # so far this launcher supports only default controller type: platoon
     controller_type = "platoon"
 
     process_map = {}
     if args.hosts is not None or len(args.hosts) > 1:
         if args.workers is None:
             print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
-            exit(2)
+            sys.exit(2)
 
         if len(args.workers) > len(args.hosts):
             num_of_controllers = len(args.hosts)
