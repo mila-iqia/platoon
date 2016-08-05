@@ -58,9 +58,9 @@ class Controller(object):
 
         self._device_list = device_list
         self._local_size = local_size
-        self._get_region_info_count = 0
-        self._init_new_shmem_count = 0
-        self._am_i_first_count = 0
+        self._get_region_info_count = [0]
+        self._init_new_shmem_count = [0]
+        self._am_i_first_count = [0]
 
         # If we are starting a multi-node training (new interface)
         self._multinode = multinode
@@ -98,11 +98,12 @@ class Controller(object):
 
         # If we are using the new interface, then initialize workers
         if experiment_name:
+            # TODO better logs folder path
             logs_folder = os.path.join("PLATOON_LOGS", experiment_name, time.strftime("%Y-%m-%d_%H-%M"))
             os.makedirs(logs_folder)
             try:
                 for i in range(self._local_size):
-                    p = launch_process(logs_folder, experiment_name, None, self.device_list[i], "worker")
+                    p = launch_process(logs_folder, experiment_name, None, self._device_list[i], "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
                 print("ERROR! OS error in Popen: {}".format(exc), file=sys.stderr)
@@ -219,8 +220,8 @@ class Controller(object):
         This will work only if every single worker participates successfully each
         time in a concurrent request of the same type to their controller.
         """
-        counter = (counter + 1) % self._local_size
-        if counter == 1:
+        counter[0] = (counter[0] + 1) % self._local_size
+        if counter[0] == 1:
             return True
         return False
 
