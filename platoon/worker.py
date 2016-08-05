@@ -1,7 +1,6 @@
 import os
 import sys
 import signal
-from future.utils import raise_from
 
 import numpy
 import posix_ipc
@@ -16,7 +15,7 @@ try:
 except ImportError:
     pygpu = None
 
-from util import (mmap, PlatoonError)
+from util import (mmap, PlatoonError, PlatoonWarning)
 
 
 # You need:
@@ -77,12 +76,14 @@ class Worker(object):
         try:
             self._register_to_platoon()
         except Exception as exc:
-            # TODO log in error
+            print(PlatoonWarning("Failed to register in a regional GPU comm world.", exc),
+                  file=sys.stderr)
+            print(PlatoonWarning("Platoon new interface will not be functional."),
+                  file=sys.stderr)
             self._regional_comm = None
         self._shmem_names = dict()
         self._shmrefs = dict()
         self.shared_arrays = dict()
-
         signal.signal(signal.SIGINT, self._handle_force_close)
 
     def send_req(self, req, info=None):
@@ -119,7 +120,7 @@ class Worker(object):
 
         """
         self.close()
-        sys.exit(-1)  # Exit normally with non success value.
+        sys.exit(1)  # Exit normally with non success value.
 
     def close(self):
         if hasattr(self, 'asocket'):
@@ -127,12 +128,12 @@ class Worker(object):
         if hasattr(self, 'csocket'):
             self.csocket.close()
         self.context.term()
+        self._lock.close()
+        try:
+            self._lock.unlink()
+        except posix_ipc.ExistentialError:
+            pass
         if hasattr(self, '_shmref'):
-            self._lock.close()
-            try:
-                self._lock.unlink()
-            except posix_ipc.ExistentialError:
-                pass
             try:
                 self._shmref.unlink()
             except posix_ipc.ExistentialError:
@@ -145,26 +146,20 @@ class Worker(object):
 
     def _register_to_platoon(self):
         if pygpu:
-            try:
-                gpuctx = theanoga.get_context(None)
-            except theanoga.ContextNotDefined as exc:
-                raise_from(PlatoonError("Cannot find available Theano pygpu context"), exc)
-            try:
-                self.device = gpuctx.devname
-                self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
-                # Ask controller for region's info to participate in
-                response = self.send_req("platoon-get_region_info",
-                                         info={'device': self.device,
-                                               'region_id': self._region_id.comm_id})
-                self._region_id.comm_id = bytearray(response['region_id'])
-                self._regional_comm = gpucoll.GpuComm(self._region_id,
-                                                      response['region_size'],
-                                                      response['regional_rank'])
-                self._multinode = response['multinode']
-            except Exception as exc:
-                raise_from(PlatoonError("Error in pygpu"), exc)
+            gpuctx = theanoga.get_context(None)
+            self.device = gpuctx.devname
+            self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
+            # Ask controller for region's info to participate in
+            response = self.send_req("platoon-get_region_info",
+                                     info={'device': self.device,
+                                           'region_id': self._region_id.comm_id})
+            self._region_id.comm_id = bytearray(response['region_id'])
+            self._regional_comm = gpucoll.GpuComm(self._region_id,
+                                                  response['region_size'],
+                                                  response['regional_rank'])
+            self._multinode = response['multinode']
         else:
-            raise PlatoonError("pygpu or theano is not imported")
+            raise AttributeError("pygpu or theano is not imported")
 
     def init_mb_sock(self, port, hwm=10):
         """
@@ -270,7 +265,7 @@ class Worker(object):
         if isinstance(array, theanoga.GpuArraySharedVariable):
             internal = array.get_value(borrow=True, return_internal_type=True)
         else:
-            raise PlatoonError("array input is not theano.gpuarray.GpuArraySharedVariable")
+            raise TypeError("`array` input is not theano.gpuarray.GpuArraySharedVariable.")
 
         size = internal.size * internal.itemsize
         if internal.flags['F']:
@@ -279,22 +274,22 @@ class Worker(object):
             order = 'C'
 
         #  self.lock()
-        shared_mem_name = self.send_req("platoon-init_new_shmem",
-                                        info={'size': size})
-
         try:
+            shared_mem_name = self.send_req("platoon-init_new_shmem",
+                                            info={'size': size})
+
             shmref = posix_ipc.SharedMemory(shared_mem_name)
             shm = mmap(fd=shmref.fd, length=size)
             shmref.close_fd()
         except Exception as exc:
             try:
-                shm.unlink()
-            except posix_ipc.ExistentialError:
+                shmref.unlink()
+            except (NameError, posix_ipc.ExistentialError):
                 pass
-            raise_from(PlatoonError("Error while getting access to shared memory"), exc)
+            raise PlatoonError("Failed to get access to shared memory buffer.", exc)
         shared_array = numpy.ndarray(internal.shape, dtype=internal.dtype,
                                      buffer=shm, offset=0, order=order)
-        self._shmem_names[array] = shared_mem_name
+        self._shmem_names[array] = shared_mem_name  # Keep for common ref with Controller
         self._shmrefs[array] = shmref  # Keep for unlinking when closing
         self.shared_arrays[array] = shared_array
         #  self.unlock()
@@ -314,14 +309,17 @@ class Worker(object):
         Returns
         -------
         result: None or :ref:`theano.gpuarray.type.GpuArraySharedVariable`
-            New Theano gpu shared variable which contains operation result \
+            New Theano gpu shared variable which contains operation result
             if `dest` is None, else nothing.
 
         Warning
         -------
         Repeated unnecessary calls with no `dest`, where a logically valid
         Theano gpu shared variable exists, leads to poorly performing code.
-        Also, workers are expected to make homogenous calls to this API. It will
+
+        Notes
+        -----
+        Workers are expected to make homogenous calls to this API. It will
         not work currently for heterogenous calls.
 
         """
@@ -332,13 +330,13 @@ class Worker(object):
         if isinstance(src, theanoga.GpuArraySharedVariable):
             internal_src = src.get_value(borrow=True, return_internal_type=True)
         else:
-            raise PlatoonError("src input is not theano.gpuarray.GpuArraySharedVariable")
+            raise TypeError("`src` input is not theano.gpuarray.GpuArraySharedVariable.")
 
         if dest is not None:
             if isinstance(dest, theanoga.GpuArraySharedVariable):
                 internal_dest = dest.get_value(borrow=True, return_internal_type=True)
             else:
-                raise PlatoonError("dest input is not theano.gpuarray.GpuArraySharedVariable")
+                raise TypeError("`dest` input is not theano.gpuarray.GpuArraySharedVariable.")
         else:
             internal_dest = None
 
@@ -346,12 +344,14 @@ class Worker(object):
             internal_res = self._regional_comm.all_reduce(internal_src,
                                                           op, internal_dest)
         except Exception as exc:
-            raise_from(PlatoonError("Error in pygpu all_reduce"), exc)
+            raise PlatoonError("Failed to execute pygpu all_reduce", exc)
 
-        # if multi-node is needed then do the following
+        if dest is None:
+            res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
+
+        # if running with multi-node mode
         if self._multinode:
             if dest is None:
-                res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
                 self.new_linked_shared(res)
             else:
                 if dest not in self.shared_arrays:
