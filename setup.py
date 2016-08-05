@@ -6,10 +6,10 @@ setup(
     version='0.5.0',
     author='MILA',
     packages=['platoon'],
-    scripts=['scripts/platoon-launcher'],
+    scripts=['scripts/platoon-launcher', 'scripts/platoon2-launcher'],
     url='https://github.com/mila-udem/platoon/',
     license='MIT',
     description='Experimental multi-GPU mini-framework for Theano',
     long_description=open('README.md').read(),
-    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six', 'pygpu', 'mpi4py']
+    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six']
 )
