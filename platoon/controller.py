@@ -239,7 +239,7 @@ class Controller(object):
         return response
 
     def _init_new_shmem(self, req_info):
-        first = self.is_worker_first(self._init_new_shmem_count)  # See :ref:`_is_worker_first`
+        first = self._is_worker_first(self._init_new_shmem_count)  # See :ref:`_is_worker_first`
         if first:
             self._last_shmem_name = "platoon-{0}_{1}_buffer".format(self._job_uid,
                                                                     len(self.shared_buffers))
@@ -253,7 +253,7 @@ class Controller(object):
                 shmref = posix_ipc.SharedMemory(self._last_shmem_name,
                                                 posix_ipc.O_CREAT,
                                                 size=size)
-                shm = mmap(fd=self._last_shmref.fd, length=size)
+                shm = mmap(fd=shmref.fd, length=size)
                 shmref.close_fd()
             except Exception as exc:
                 try:
