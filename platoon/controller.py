@@ -68,7 +68,7 @@ class Controller(object):
             try:
                 self._init_global_comm()
                 signal.signal(signal.SIGTERM, self._handle_force_close)
-            except ImportError as exc:
+            except AttributeError as exc:
                 print("WARNING! {} while being in multi-node mode".format(exc),
                       file=sys.stderr)
 
@@ -254,8 +254,8 @@ class Controller(object):
                 shmref.close_fd()
             except Exception as exc:
                 try:
-                    shm.unlink()
-                except posix_ipc.ExistentialError:
+                    shmref.unlink()
+                except (NameError, posix_ipc.ExistentialError):
                     pass
                 raise PlatoonError("Failed to initialize new shared buffer.", exc)
             # We want every worker to get the same shared memory name that is
@@ -350,7 +350,7 @@ class Controller(object):
 
     def _init_global_comm(self):
         if MPI is None:
-            raise ImportError("mpi4py is not imported")
+            raise AttributeError("mpi4py is not imported")
         self._global_comm = MPI.COMM_WORLD
         self._global_size = MPI.COMM_WORLD.Get_size()
         self._global_rank = MPI.COMM_WORLD.Get_rank()

@@ -10,18 +10,36 @@ except ImportError:
     MPI = None
 
 
-class PlatoonError(Exception):
-    """Exception used for most errors related to Platoon.
+class PlatoonException(Exception):
+    """Exception used for abnormal behaviour related to Platoon.
+
+    Useful for logging and managing error.
+
     """
-    def __init__(self, descr, from_exc=None):
+    def __init__(self, severity, descr, from_exc=None):
+        self.severity = severity
         self.descr = descr
         self.from_exc = from_exc
 
     def __str__(self):
-        d = "ERROR! " + str(self.descr)
+        d = str(self.severity) + "! " + str(self.descr)
         if self.from_exc is not None:
             d += "\nReason: " + str(self.from_exc)
         return d
+
+
+class PlatoonError(PlatoonException):
+    """Exception used for errors related to Platoon.
+    """
+    def __init__(self, descr, from_exc=None):
+        super(PlatoonError, self).__init__("ERROR", descr, from_exc)
+
+
+class PlatoonWarning(PlatoonException):
+    """Exception used for warnings related to Platoon.
+    """
+    def __init__(self, descr, from_exc=None):
+        super(PlatoonWarning, self).__init__("WARNING", descr, from_exc)
 
 
 def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
