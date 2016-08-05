@@ -165,6 +165,14 @@ if __name__ == '__main__':
         print("Done")
         experiment_type = "Multi-node Controllers"
     else:
+        if hosts is not None:
+            import socket
+            hostname = socket.gethostname()
+            if hosts[0] != hostname:
+                print("\nERROR! A single host '{0}' was specified which is not "
+                      "the same as the current host '{1}'.\nThis is not currently "
+                      "supported.".format(hosts[0], hostname))
+                sys.exit(2)
         num_of_controllers = 1
         controller_args = [args.experiment_name, '--single']
         if args.devices is not None:
