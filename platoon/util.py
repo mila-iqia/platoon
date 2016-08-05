@@ -63,7 +63,11 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
         with open(log_file.format("err"), 'w') as stderr_file:
             env = dict(os.environ)
             env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
-            command = ["python", "-u", "{0}_{1}.py".format(experiment_name, process_type)]
+            if experiment_type == "platoon" and process_type == "controller":
+                executable = ["-m", "platoon.controller"]
+            else:
+                executable = ["{0}_{1}.py".format(experiment_name, process_type)]
+            command = ["python", "-u"] + executable
             if args is not None:
                 command += args
             process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)

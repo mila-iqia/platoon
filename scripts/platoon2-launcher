@@ -32,6 +32,7 @@ from platoon.util import launch_process
 from platoon import configparser
 
 
+# TODO revise help
 def parse_arguments():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -50,12 +51,14 @@ def parse_arguments():
             default one in the framework.
 
             Platoon is configured through command line arguments and in case of
-            their absence (or if needed) through (hidden or visible) platoonrc
-            files. If no control arguments out of the following are provided,
-            then platoonrc is searched in current folder and then in user's home
-            folder. If even then a platoonrc file cannot be found, then
-            single-node usage is assumed with all GPU devices found on host
-            participating in the computation.
+            their absence (or if needed) through environmental variables or
+            platoonrc files. Please read `platoonrc.conf` in package's root
+            directory on how to configure Platoon in total. If no control
+            arguments out of the following are provided, then platoonrc is
+            searched in current folder and then in user's home folder. If even
+            then a platoonrc file cannot be found, then single-node usage is
+            assumed with all GPU devices found on host participating in the
+            computation.
 
             If single-node is explicitly specified, the specified devices will
             be used in the order they are parsed. The same thing applies for
@@ -120,10 +123,10 @@ if __name__ == '__main__':
 
         if len(args.workers) > len(hosts):
             num_of_controllers = len(hosts)
-            print("\nWARNING! Given more workers per host than number of hosts")
+            print("\nWARNING! Given more workers per host than number of hosts.")
         elif len(args.workers) < len(hosts):
             num_of_controllers = len(args.workers)
-            print("\nWARNING! Given more hosts than number of 'workers per hosts'")
+            print("\nWARNING! Given more hosts than number of 'workers per hosts'.")
         else:
             num_of_controllers = len(hosts)
 
@@ -139,9 +142,13 @@ if __name__ == '__main__':
                 command += [','.join(args.hosts[:num_of_controllers])]
                 command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
                 command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
+                if controller_type == "platoon":
+                    executable = ["-m", "platoon.controller"]
+                else:
+                    executable = ["{}_controller.py".format(controller_type)]
                 for i, w in enumerate(num_of_workers):
-                    command += ["python", "-u", "{}_controller.py".format(controller_type),
-                                args.experiment_name, "--multi", "-nw", str(w)]
+                    command += ["python", "-u"] + executable
+                    command += [args.experiment_name, "--multi", "-nw", str(w)]
                     # TODO Support controller args
                     #  if args is not None:
                     #      command += args
@@ -171,17 +178,16 @@ if __name__ == '__main__':
                 num_of_workers = len(args.devices)
             controller_args += ['-D']
             controller_args += args.devices[:num_of_workers]
-            print("### Starting single-node multi-gpu training on: {}".format(args.devices))
         else:
             if args.workers is None:
                 print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
             num_of_workers = args.workers[0]
-            print("### Starting single-node multi-gpu training")
         controller_args += ["-nw", str(num_of_workers)]
         # TODO Support controller args
         #  if args is not None:
         #      command += args
 
+        print("### Starting single-node multi-gpu training")
         try:
             p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
         except OSError as exc:

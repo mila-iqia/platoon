@@ -15,8 +15,8 @@ try:
 except ImportError:
     MPI = None
 
-from util import (PlatoonError, mmap, launch_process,
-                  op_to_mpi, dtype_to_mpi)
+from .util import (PlatoonError, mmap, launch_process,
+                   op_to_mpi, dtype_to_mpi)
 
 
 class Controller(object):
@@ -421,19 +421,19 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def spawn_controller():
-    args = parse_arguments()
-
+def get_workers_devices(args):
     # Get Controller's devices
+    import socket
+    hostname = socket.gethostname()
+
     if args.single and args.devices is not None:
         # 1. Use device names from arguments if they are specified
         devices = args.devices
     else:
         # 2. Try device names from configuration
         from platoon import configparser
-        import socket
         try:
-            devices = configparser.fetch_devices_for_host(socket.gethostname())
+            devices = configparser.fetch_devices_for_host(hostname)
         except KeyError:
             # 3. Else try to use all compatible GPUs in host
             try:
@@ -455,6 +455,15 @@ def spawn_controller():
         workers = len(devices)
     else:
         workers = args.workers
+
+    print("## On " + hostname + " using: " + " ".join(devices[:workers]))
+    return workers, devices
+
+
+def spawn_controller():
+    args = parse_arguments()
+
+    workers, devices = get_workers_devices(args)
 
     controller = Controller(control_port=5567,
                             experiment_name=args.experiment_name,
