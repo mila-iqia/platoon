@@ -58,7 +58,7 @@ def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
 def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
     print("## Starting {0} on {1} ...".format(process_type, device), end=' ')
 
-    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
+    log_file = os.path.join(logs_folder, "{0}_{1}.{{}}".format(process_type, device))
     with open(log_file.format("out"), 'w') as stdout_file:
         with open(log_file.format("err"), 'w') as stderr_file:
             env = dict(os.environ)

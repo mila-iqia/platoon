@@ -50,7 +50,7 @@ class Controller(object):
 
     """
 
-    def __init__(self, control_port, port=None, hwm=10, experiment_name="",
+    def __init__(self, control_port, port=None, hwm=10, experiment=None,
                  local_size=0, device_list=list(), multinode=False):
         self._should_stop = False
         self._workers = set()
@@ -97,13 +97,15 @@ class Controller(object):
         self.shared_buffers = dict()
 
         # If we are using the new interface, then initialize workers
-        if experiment_name:
-            # TODO better logs folder path
-            logs_folder = os.path.join("PLATOON_LOGS", experiment_name, time.strftime("%Y-%m-%d_%H-%M"))
-            os.makedirs(logs_folder)
+        if experiment:
+            # TODO maybe think something smarter for (multi-node) worker logging
+            try:
+                os.makedirs(experiment[1])
+            except OSError:
+                pass
             try:
                 for i in range(self._local_size):
-                    p = launch_process(logs_folder, experiment_name, None, self._device_list[i], "worker")
+                    p = launch_process(logs_folder, experiment[0], None, self._device_list[i], "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
                 print("ERROR! OS error in Popen: {}".format(exc), file=sys.stderr)
@@ -409,6 +411,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Base Platoon Controller process. Reigns over a computer node.")
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+    parser.add_argument('log_directory', help='Directory where logging info and error files will exist.')
     single_or_multi = parser.add_mutually_exclusive_group(required=True)
     single_or_multi.add_argument('--single', action='store_true',
                                  help='Indicates that this Controller participates in a single-node platoon.')
@@ -467,7 +470,7 @@ def spawn_controller():
     workers, devices = get_workers_devices(args)
 
     controller = Controller(control_port=5567,
-                            experiment_name=args.experiment_name,
+                            experiment=(args.experiment_name, args.log_directory),
                             local_size=workers,
                             device_list=devices,
                             multinode=not args.single)

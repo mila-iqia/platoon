@@ -89,7 +89,7 @@ multi-node.'''))
 if __name__ == '__main__':
     args = parse_arguments()
 
-    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M"))
+    logs_folder = os.path.join("PLATOON_LOGS", args.experiment_name, time.strftime("%Y-%m-%d_%H-%M-%S"))
     os.makedirs(logs_folder)
 
     print("### Launching experiment: {}".format(args.experiment_name))
@@ -145,7 +145,7 @@ if __name__ == '__main__':
                     executable = ["{}_controller.py".format(controller_type)]
                 for i, w in enumerate(num_of_workers):
                     command += ["python", "-u"] + executable
-                    command += [args.experiment_name, "--multi", "-nw", str(w)]
+                    command += [args.experiment_name, logs_folder, "--multi", "-nw", str(w)]
                     # TODO Support controller args
                     #  if args is not None:
                     #      command += args
@@ -171,7 +171,7 @@ if __name__ == '__main__':
                       "supported.".format(hosts[0], hostname))
                 sys.exit(2)
         num_of_controllers = 1
-        controller_args = [args.experiment_name, '--single']
+        controller_args = [args.experiment_name, logs_folder, '--single']
         if args.devices is not None:
             if args.workers is not None:
                 if args.workers[0] > len(args.devices):
