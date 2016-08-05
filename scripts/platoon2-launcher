@@ -14,6 +14,7 @@ Exit Codes
 1: A worker or controller has exited with non-success status
 2: False arguments
 3: Subprocess or OS errors
+4: Other error
 
 """
 
@@ -153,7 +154,7 @@ if __name__ == '__main__':
                     sys.exit(3)
                 except Exception as exc:
                     print("\nERROR! Other in Popen: {}".format(exc))
-                    sys.exit(3)
+                    sys.exit(4)
         print("Done")
         experiment_type = "Multi-node Controllers"
     else:
@@ -187,8 +188,8 @@ if __name__ == '__main__':
             print("\nERROR! OS error in Popen: {}".format(exc))
             sys.exit(3)
         except Exception as exc:
-            print("\nERROR! Other in Popen: {}".format(exc))
-            sys.exit(3)
+            print("\nERROR! Other while launching process: {}".format(exc))
+            sys.exit(4)
         experiment_type = "Single-node Controller"
 
     print("\n### Logs folder ###\n{}".format(logs_folder))

@@ -13,12 +13,15 @@ except ImportError:
 class PlatoonError(Exception):
     """Exception used for most errors related to Platoon.
     """
-    pass
+    def __init__(self, descr, from_exc=None):
+        self.descr = descr
+        self.from_exc = from_exc
 
-class PlatoonFail(Exception):
-    def __init__(self):
-        super(PlatoonError, self).__init__("One or more processes in host have "
-                                           "exited. Platoon has failed. Check logs.")
+    def __str__(self):
+        d = "ERROR! " + str(self.descr)
+        if self.from_exc is not None:
+            d += "\nReason: " + str(self.from_exc)
+        return d
 
 
 def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
@@ -98,4 +101,4 @@ def dtype_to_mpi(dtype):
     res = NP_TO_MPI_TYPE.get(np.dtype(dtype))
     if res is not None:
         return res
-    raise ValueError("Conversion from dtype {} is not known".format(dtype)
+    raise ValueError("Conversion from dtype {} is not known".format(dtype))
