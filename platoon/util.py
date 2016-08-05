@@ -110,7 +110,7 @@ if MPI:
 
 def op_to_mpi(op):
     if MPI is None:
-        raise PlatoonError("mpi4py is not imported")
+        raise AttributeError("mpi4py is not imported")
     res = GA_TO_MPI_OP.get(op.lower())
     if res is not None:
         return res
@@ -119,8 +119,8 @@ def op_to_mpi(op):
 
 def dtype_to_mpi(dtype):
     if MPI is None:
-        raise PlatoonError("mpi4py is not imported")
+        raise AttributeError("mpi4py is not imported")
     res = NP_TO_MPI_TYPE.get(np.dtype(dtype))
     if res is not None:
         return res
-    raise ValueError("Conversion from dtype {} is not known".format(dtype))
+    raise TypeError("Conversion from dtype {} is not known".format(dtype))

@@ -273,7 +273,7 @@ class Controller(object):
         if not self._multinode:
             raise PlatoonError("Request to all_reduce, when multi-node is off.")
         if MPI is None:
-            raise PlatoonError("mpi4py is not imported.")
+            raise AttributeError("mpi4py is not imported.")
         dtype = req_info['dtype']
         op = req_info['op']
         array = self.shared_buffers[req_info['shmem']]
