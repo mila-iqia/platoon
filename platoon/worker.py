@@ -12,6 +12,7 @@ try:
     from pygpu import collectives as gpucoll
     from pygpu import gpuarray as pygpuga
     from theano import gpuarray as theanoga
+    from theano import config as theanoconf
 except ImportError:
     pygpu = None
 
@@ -71,8 +72,9 @@ class Worker(object):
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
-        self._lock = posix_ipc.Semaphore("{}lock".format(self._job_uid))
+        self._lock = posix_ipc.Semaphore("{}_lock".format(self._job_uid))
 
+        signal.signal(signal.SIGINT, self._handle_force_close)
         try:
             self._register_to_platoon()
         except Exception as exc:
@@ -84,7 +86,6 @@ class Worker(object):
         self._shmem_names = dict()
         self._shmrefs = dict()
         self.shared_arrays = dict()
-        signal.signal(signal.SIGINT, self._handle_force_close)
 
     def send_req(self, req, info=None):
         """
@@ -123,6 +124,7 @@ class Worker(object):
         sys.exit(1)  # Exit normally with non success value.
 
     def close(self):
+        print("Closing connections and unlinking memory...", file=sys.stderr)
         if hasattr(self, 'asocket'):
             self.asocket.close()
         if hasattr(self, 'csocket'):
@@ -147,13 +149,13 @@ class Worker(object):
     def _register_to_platoon(self):
         if pygpu:
             gpuctx = theanoga.get_context(None)
-            self.device = gpuctx.devname
+            self.device = theanoconf.device
             self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
             # Ask controller for region's info to participate in
             response = self.send_req("platoon-get_region_info",
                                      info={'device': self.device,
-                                           'region_id': self._region_id.comm_id})
-            self._region_id.comm_id = bytearray(response['region_id'])
+                                           'region_id': self._region_id.comm_id.decode('utf-8')})
+            self._region_id.comm_id = bytearray(response['region_id'].encode('utf-8'))
             self._regional_comm = gpucoll.GpuComm(self._region_id,
                                                   response['region_size'],
                                                   response['regional_rank'])
@@ -341,6 +343,7 @@ class Worker(object):
             internal_dest = None
 
         try:
+            # Execute collective operation in local NCCL communicator world
             internal_res = self._regional_comm.all_reduce(internal_src,
                                                           op, internal_dest)
         except Exception as exc:
@@ -349,8 +352,9 @@ class Worker(object):
         if dest is None:
             res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
 
-        # if running with multi-node mode
+        # If running with multi-node mode
         if self._multinode:
+            # Create new shared buffer which corresponds to result GpuArray buffer
             if dest is None:
                 self.new_linked_shared(res)
             else:
@@ -364,17 +368,18 @@ class Worker(object):
             self.lock()
             first = self.send_req("platoon-am_i_first")
             if first:
-                # write from gpuarray to shared memory
+                # Copy from GpuArray to shared memory buffer
                 internal_res.read(res_array)
-                # ask controller to perform the same collective on shared memory
-                # using MPI
+
+                # Request from controller to perform the same collective operation
+                # in MPI communicator world using shared memory buffer
                 self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
                                                           'dtype': str(internal_res.dtype),
                                                           'op': op})
             self.unlock()
 
-            # simultaneously read from shared memory back to result gpuarray
-            # only after region Controller has finished global collective operation
+            # Concurrently copy from shared memory back to result GpuArray
+            # after Controller has finished global collective operation
             internal_res.write(res_array)
 
         if dest is None:

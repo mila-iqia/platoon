@@ -105,7 +105,7 @@ class Controller(object):
                 pass
             try:
                 for i in range(self._local_size):
-                    p = launch_process(logs_folder, experiment[0], None, self._device_list[i], "worker")
+                    p = launch_process(experiment[1], experiment[0], None, self._device_list[i], "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
                 print("ERROR! OS error in Popen: {}".format(exc), file=sys.stderr)
@@ -222,6 +222,8 @@ class Controller(object):
         This will work only if every single worker participates successfully each
         time in a concurrent request of the same type to their controller.
         """
+        if self._local_size == 1:
+            return True
         counter[0] = (counter[0] + 1) % self._local_size
         if counter[0] == 1:
             return True
@@ -230,7 +232,8 @@ class Controller(object):
     def _get_region_info(self, req_info):
         first = self._is_worker_first(self._get_region_info_count)  # See :ref:`_is_worker_first`
         if first:
-            self._region_id = b"platoon-" + req_info['region_id']
+            self._region_id = b"platoon-" + req_info['region_id'].encode('utf-8')
+            self._region_id = self._region_id.decode('utf-8')
         response = dict()
         response['region_id'] = self._region_id
         response['region_size'] = self._local_size
@@ -359,13 +362,16 @@ class Controller(object):
         self._global_rank = MPI.COMM_WORLD.Get_rank()
 
     def _clean(self):
+        print("Cleaning up...", file=sys.stderr)
         self._kill_workers()
         if self._multinode:
+            print("Aborting MPI job...", file=sys.stderr)
             self._global_comm.Abort(errorcode=1)
 
     def _kill_workers(self):
         while self._workers:
             pid = self._workers.pop()
+            print("Killing worker {}...".format(pid), file=sys.stderr)
             while True:
                 try:
                     os.kill(pid, signal.SIGINT)
@@ -378,6 +384,7 @@ class Controller(object):
                 pass
 
     def _close(self):
+        print("Closing connections and unlinking memory...", file=sys.stderr)
         self.csocket.close()
         self.ccontext.term()
         if hasattr(self, 'asocket'):
@@ -453,12 +460,12 @@ def get_workers_devices(args):
                 print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
                 sys.exit(2)
 
-    if args.workers > len(devices):
+    if int(args.workers) > len(devices):
         print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)),
               file=sys.stderr)
         workers = len(devices)
     else:
-        workers = args.workers
+        workers = int(args.workers)
 
     print("## On " + hostname + " using: " + " ".join(devices[:workers]))
     return workers, devices

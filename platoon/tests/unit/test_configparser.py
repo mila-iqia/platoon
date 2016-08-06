@@ -18,7 +18,7 @@ def test_fetch_hosts_from_envs():
 def test_fetch_hosts_from_rc():
     if os.getenv("PLATOON_HOSTS"):
         os.environ.pop("PLATOON_HOSTS")
-    os.environ["PLATOONRC"] = "../../platoonrc.conf"
+    os.environ["PLATOONRC"] = "../../../platoonrc.conf"
     importlib.reload(cfgp)
     hosts = cfgp.fetch_hosts()
     assert hosts == ["lisa0", "lisa1", "lisa3"], (hosts)
@@ -37,7 +37,7 @@ def test_fetch_devices_from_rc():
     if os.getenv("PLATOON_DEVICES"):
         os.environ.pop("PLATOON_DEVICES")
     os.environ["PLATOON_DEVICES"] = ""
-    os.environ["PLATOONRC"] = "../../platoonrc.conf"
+    os.environ["PLATOONRC"] = "../../../platoonrc.conf"
     importlib.reload(cfgp)
     devs = cfgp.fetch_devices_for_host("lisa0")
     assert devs == ["cuda0", "cuda1"], (devs)
