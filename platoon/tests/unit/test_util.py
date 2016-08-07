@@ -1,5 +1,5 @@
-import importlib
 import unittest
+from six.moves import reload_module as reload
 
 import numpy as np
 
@@ -15,7 +15,7 @@ except:
 class TestOpToMPI(unittest.TestCase):
     @unittest.skipUnless(MPI_IMPORTED, "Needs mpi4py module")
     def test_op_to_mpi(self):
-        importlib.reload(util)
+        reload(util)
         assert util.op_to_mpi('+') == MPI.SUM
         assert util.op_to_mpi("sum") == MPI.SUM
         assert util.op_to_mpi("add") == MPI.SUM
@@ -34,7 +34,7 @@ class TestOpToMPI(unittest.TestCase):
 
     @unittest.skipUnless(MPI_IMPORTED, "Needs mpi4py module")
     def test_op_to_mpi_op_fail(self):
-        importlib.reload(util)
+        reload(util)
         with self.assertRaises(ValueError):
             util.op_to_mpi('asdfasfda')
         with self.assertRaises(ValueError):
@@ -44,7 +44,7 @@ class TestOpToMPI(unittest.TestCase):
 class TestDtypeToMPI(unittest.TestCase):
     @unittest.skipUnless(MPI_IMPORTED, "Needs mpi4py module")
     def test_dtype_to_mpi(self):
-        importlib.reload(util)
+        reload(util)
         assert util.dtype_to_mpi(np.dtype('bool')) == MPI.C_BOOL
         assert util.dtype_to_mpi(np.dtype('int8')) == MPI.INT8_T
         assert util.dtype_to_mpi(np.dtype('uint8')) == MPI.UINT8_T
@@ -66,7 +66,7 @@ class TestDtypeToMPI(unittest.TestCase):
 
     @unittest.skipUnless(MPI_IMPORTED, "Needs mpi4py module")
     def test_dtype_to_mpi_dtype_fail(self):
-        importlib.reload(util)
+        reload(util)
         with self.assertRaises(TypeError):
             util.dtype_to_mpi('sadfa')
         with self.assertRaises(TypeError):
