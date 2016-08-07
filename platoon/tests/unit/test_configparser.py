@@ -27,10 +27,10 @@ def test_fetch_hosts_from_rc():
 def test_fetch_devices_from_envs():
     if os.getenv("PLATOON_DEVICES"):
         os.environ.pop("PLATOON_DEVICES")
-    os.environ["PLATOON_DEVICES"] = "cuda0,cudae"
+    os.environ["PLATOON_DEVICES"] = "cuda0,opencl0:1"
     importlib.reload(cfgp)
     devices = cfgp.fetch_devices_for_host("asfasfa")
-    assert devices == ["cuda0", "cudae"], (devices)
+    assert devices == ["cuda0", "opencl0:1"], (devices)
 
 
 def test_fetch_devices_from_rc():

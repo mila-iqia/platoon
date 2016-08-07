@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import signal
@@ -232,8 +233,7 @@ class Controller(object):
     def _get_region_info(self, req_info):
         first = self._is_worker_first(self._get_region_info_count)  # See :ref:`_is_worker_first`
         if first:
-            self._region_id = b"platoon-" + req_info['region_id'].encode('utf-8')
-            self._region_id = self._region_id.decode('utf-8')
+            self._region_id = "platoon-" + req_info['region_id']
         response = dict()
         response['region_id'] = self._region_id
         response['region_size'] = self._local_size

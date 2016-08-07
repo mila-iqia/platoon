@@ -38,38 +38,38 @@ class TestController(unittest.TestCase):
     def test_get_region_info(self):
         req_info = {}
 
-        req_info['region_id'] = bytearray(b'1')
+        req_info['region_id'] = '1'
         req_info['device'] = 'cuda0'
         res = self.control._get_region_info(req_info)
         assert set(res.keys()) == set(['region_id', 'region_size', 'regional_rank', 'multinode'])
-        assert res['region_id'] == bytearray(b"platoon-1")
+        assert res['region_id'] == "platoon-1"
         assert res['region_size'] == self.local_size
         assert res['regional_rank'] == 0
         assert not res['multinode']
 
-        req_info['region_id'] = bytearray(b'2')
+        req_info['region_id'] = '2'
         req_info['device'] = 'cuda1'
         res = self.control._get_region_info(req_info)
         assert set(res.keys()) == set(['region_id', 'region_size', 'regional_rank', 'multinode'])
-        assert res['region_id'] == bytearray(b"platoon-1")
+        assert res['region_id'] == "platoon-1"
         assert res['region_size'] == self.local_size
         assert res['regional_rank'] == 1
         assert not res['multinode']
 
-        req_info['region_id'] = bytearray(b'3')
+        req_info['region_id'] = '3'
         req_info['device'] = 'cuda2'
         res = self.control._get_region_info(req_info)
         assert set(res.keys()) == set(['region_id', 'region_size', 'regional_rank', 'multinode'])
-        assert res['region_id'] == bytearray(b"platoon-1")
+        assert res['region_id'] == "platoon-1"
         assert res['region_size'] == self.local_size
         assert res['regional_rank'] == 2
         assert not res['multinode']
 
-        req_info['region_id'] = bytearray(b'asdfasfda')
+        req_info['region_id'] = 'asdfasfda'
         req_info['device'] = 'cuda1'
         res = self.control._get_region_info(req_info)
         assert set(res.keys()) == set(['region_id', 'region_size', 'regional_rank', 'multinode'])
-        assert res['region_id'] == bytearray(b"platoon-asdfasfda")
+        assert res['region_id'] == "platoon-asdfasfda"
         assert res['region_size'] == self.local_size
         assert res['regional_rank'] == 1
         assert not res['multinode']
