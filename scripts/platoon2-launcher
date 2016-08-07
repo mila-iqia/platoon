@@ -112,22 +112,18 @@ if __name__ == '__main__':
         hosts = args.hosts
 
     # Check if we run on multi-node
-    if hosts is not None and len(hosts) > 1:
-        # On multi-node, user must specify number of workers per controller
-        if args.workers is None:
-            print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
-            sys.exit(2)
-
-        if len(args.workers) > len(hosts):
-            num_of_controllers = len(hosts)
-            print("\nWARNING! Given more workers per host than number of hosts.")
-        elif len(args.workers) < len(hosts):
-            num_of_controllers = len(args.workers)
-            print("\nWARNING! Given more hosts than number of 'workers per hosts'.")
+    if hosts and len(hosts) > 1:
+        if args.workers:
+            if len(args.workers) > len(hosts):
+                num_of_controllers = len(hosts)
+                print("\nWARNING! Given more workers per host than number of hosts.")
+            elif len(args.workers) < len(hosts):
+                num_of_controllers = len(args.workers)
+                print("\nWARNING! Given more hosts than number of 'workers per hosts'.")
+            else:
+                num_of_controllers = len(hosts)
         else:
             num_of_controllers = len(hosts)
-
-        num_of_workers = args.workers[:num_of_controllers]
 
         print("### Starting multi-node/gpu training on: {} ...".format(args.hosts), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
@@ -143,9 +139,11 @@ if __name__ == '__main__':
                     executable = ["-m", "platoon.controller"]
                 else:
                     executable = ["{}_controller.py".format(controller_type)]
-                for i, w in enumerate(num_of_workers):
+                for i in range(num_of_controllers):
                     command += ["python", "-u"] + executable
-                    command += [args.experiment_name, logs_folder, "--multi", "-nw", str(w)]
+                    command += [args.experiment_name, logs_folder, "--multi"]
+                    if args.workers:
+                        command += ["-nw", str(args.workers[i])]
                     # TODO Support controller args
                     #  if args is not None:
                     #      command += args
@@ -162,7 +160,7 @@ if __name__ == '__main__':
         print("Done")
         experiment_type = "Multi-node Controllers"
     else:
-        if hosts is not None:
+        if hosts:
             import socket
             hostname = socket.gethostname()
             if hosts[0] != hostname:
@@ -172,8 +170,8 @@ if __name__ == '__main__':
                 sys.exit(2)
         num_of_controllers = 1
         controller_args = [args.experiment_name, logs_folder, '--single']
-        if args.devices is not None:
-            if args.workers is not None:
+        if args.devices:
+            if args.workers:
                 if args.workers[0] > len(args.devices):
                     print("\nWARNING! Specified more workers per host than devices. Using number of devices.")
                     num_of_workers = len(args.devices)
@@ -184,10 +182,12 @@ if __name__ == '__main__':
             controller_args += ['-D']
             controller_args += args.devices[:num_of_workers]
         else:
-            if args.workers is None:
-                print("\nERROR! Number of workers per host's controller must be given. Use '-nw' option.")
-            num_of_workers = args.workers[0]
-        controller_args += ["-nw", str(num_of_workers)]
+            if args.workers:
+                num_of_workers = args.workers[0]
+            else:
+                num_of_workers = None
+        if num_of_workers:
+            controller_args += ["-nw", str(num_of_workers)]
         # TODO Support controller args
         #  if args is not None:
         #      command += args

@@ -334,7 +334,7 @@ class Worker(object):
         else:
             raise TypeError("`src` input is not theano.gpuarray.GpuArraySharedVariable.")
 
-        if dest is not None:
+        if dest:
             if isinstance(dest, theanoga.GpuArraySharedVariable):
                 internal_dest = dest.get_value(borrow=True, return_internal_type=True)
             else:

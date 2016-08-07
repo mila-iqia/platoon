@@ -426,8 +426,8 @@ def parse_arguments():
                                  help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
     parser.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
                         required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
-    parser.add_argument('-nw', '--workers', metavar='num_of_workers',
-                        required=True, help='Number of workers spawned by this controller for this host.')
+    parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
+                        required=False, help='Number of workers spawned by this controller for this host.')
 
     return parser.parse_args()
 
@@ -437,7 +437,7 @@ def get_workers_devices(args):
     import socket
     hostname = socket.gethostname()
 
-    if args.single and args.devices is not None:
+    if args.single and args.devices:
         # 1. Use device names from arguments if they are specified
         devices = args.devices
     else:
@@ -450,7 +450,7 @@ def get_workers_devices(args):
             try:
                 print("WARNING! Using all compatible GPUs in host.", file=sys.stderr)
                 from pygpu import gpuarray as ga
-                devcount = ga.get_device_count("cuda", 0)
+                devcount = ga.count_devices("cuda", 0)
                 devices = ["cuda" + str(i) for i in range(devcount)]
             except ImportError:
                 print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
@@ -460,12 +460,15 @@ def get_workers_devices(args):
                 print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
                 sys.exit(2)
 
-    if int(args.workers) > len(devices):
-        print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)),
-              file=sys.stderr)
-        workers = len(devices)
+    if args.workers:
+        if args.workers > len(devices):
+            print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)),
+                  file=sys.stderr)
+            workers = len(devices)
+        else:
+            workers = args.workers
     else:
-        workers = int(args.workers)
+        workers = len(devices)
 
     print("## On " + hostname + " using: " + " ".join(devices[:workers]))
     return workers, devices
