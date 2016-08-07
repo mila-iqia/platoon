@@ -57,6 +57,62 @@ class TestWorker(unittest.TestCase):
             print(exc, file=sys.stderr)
             raise exc
 
+    def test_linked_shared(self):
+        try:
+            inp = np.arange(32, dtype='float64')
+            sinp = theano.shared(inp)
+            out = np.empty_like(inp)
+            sout = theano.shared(out)
+
+            if self.worker._multinode:
+                try:
+                    self.worker.shared_arrays[sout]
+                    self.fail("'sout' has not been linked yet to a shared buffer")
+                except KeyError:
+                    pass
+                try:
+                    self.worker.shared_arrays[sinp]
+                    self.fail("'sinp' has not been linked yet to a shared buffer")
+                except KeyError:
+                    pass
+
+            self.worker.all_reduce(sinp, '+', sout)
+
+            if self.worker._multinode:
+                try:
+                    self.worker.shared_arrays[sout]
+                except KeyError:
+                    self.fail("sout should have been linked to a shared buffer")
+                try:
+                    self.worker.shared_arrays[sinp]
+                    self.fail("'sinp' has not been linked yet to a shared buffer")
+                except KeyError:
+                    pass
+
+            expected = self.total_nw * inp
+            actual = sout.get_value()
+            assert np.allclose(expected, actual)
+
+            self.worker.all_reduce(sout, '*', sout)
+
+            if self.worker._multinode:
+                try:
+                    self.worker.shared_arrays[sout]
+                except KeyError:
+                    self.fail("sout should have been linked to a shared buffer")
+                try:
+                    self.worker.shared_arrays[sinp]
+                    self.fail("'sinp' has not been linked yet to a shared buffer")
+                except KeyError:
+                    pass
+
+            expected = expected ** self.total_nw
+            actual = sout.get_value()
+            assert np.allclose(expected, actual)
+        except Exception as exc:
+            print(exc, file=sys.stderr)
+            raise exc
+
     @classmethod
     def tearDownClass(cls):
         cls.worker.close()
