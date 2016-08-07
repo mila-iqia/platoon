@@ -11,3 +11,7 @@ To functional test the new worker interface, you need to:
 The procedure exits with 0 for success. If this does not hold, please check
 `platoon2-launcher`, in order to see a high-level description of the return
 code, and `PLATOON_LOGS` of the late procedure in current directory.
+
+To profile and benchmark the new worker interface, you need to run
+`platoon2-launcher time` in current directory. Results are written in
+PLATOON_LOGS.

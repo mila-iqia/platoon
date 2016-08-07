@@ -58,3 +58,4 @@ target/
 
 # Platoon log folders
 PLATOON_LOGS/
+*.prof
