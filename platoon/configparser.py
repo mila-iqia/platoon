@@ -58,7 +58,8 @@ def fetch_devices_for_host(host):
     # first try to have PLATOON_DEVICES
     if PLATOON_DEVICES:
         splitter = shlex.shlex(PLATOON_DEVICES, posix=True)
-        splitter.whitespace += ','
+        splitter.whitespace = ','
+        splitter.whitespace_split = True
         return list(splitter)
 
     # next try to find it in the config file
@@ -71,6 +72,7 @@ def fetch_devices_for_host(host):
         raise KeyError(host)
     splitter = shlex.shlex(devices, posix=True)
     splitter.whitespace += ','
+    splitter.whitespace_split = True
     return list(splitter)
 
 
@@ -88,7 +90,8 @@ def fetch_hosts():
     # first try to have PLATOON_HOSTS
     if PLATOON_HOSTS:
         splitter = shlex.shlex(PLATOON_HOSTS, posix=True)
-        splitter.whitespace += ','
+        splitter.whitespace = ','
+        splitter.whitespace_split = True
         return list(splitter)
 
     # next try to find it in the config file
@@ -101,4 +104,5 @@ def fetch_hosts():
         raise KeyError("hosts")
     splitter = shlex.shlex(hosts, posix=True)
     splitter.whitespace += ','
+    splitter.whitespace_split = True
     return list(splitter)
