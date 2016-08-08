@@ -266,37 +266,38 @@ class Worker(object):
         across workers.
 
         """
-        if isinstance(array, theanoga.GpuArraySharedVariable):
-            internal = array.get_value(borrow=True, return_internal_type=True)
-        else:
+        if not isinstance(array, theanoga.GpuArraySharedVariable):
             raise TypeError("`array` input is not theano.gpuarray.GpuArraySharedVariable.")
 
-        size = internal.size * internal.itemsize
-        if internal.flags['F']:
-            order = 'F'
+        if array in self.shared_arrays:
+            return self.shared_arrays[array]
         else:
-            order = 'C'
+            internal = array.get_value(borrow=True, return_internal_type=True)
+            size = internal.size * internal.itemsize
+            if internal.flags['F']:
+                order = 'F'
+            else:
+                order = 'C'
 
-        #  self.lock()
-        try:
-            shared_mem_name = self.send_req("platoon-init_new_shmem",
-                                            info={'size': size})
-
-            shmref = posix_ipc.SharedMemory(shared_mem_name)
-            shm = mmap(fd=shmref.fd, length=size)
-            shmref.close_fd()
-        except Exception as exc:
             try:
-                shmref.unlink()
-            except (NameError, posix_ipc.ExistentialError):
-                pass
-            raise PlatoonError("Failed to get access to shared memory buffer.", exc)
-        shared_array = numpy.ndarray(internal.shape, dtype=internal.dtype,
-                                     buffer=shm, offset=0, order=order)
-        self._shmem_names[array] = shared_mem_name  # Keep for common ref with Controller
-        self._shmrefs[array] = shmref  # Keep for unlinking when closing
-        self.shared_arrays[array] = shared_array
-        #  self.unlock()
+                shared_mem_name = self.send_req("platoon-init_new_shmem",
+                                                info={'size': size})
+
+                shmref = posix_ipc.SharedMemory(shared_mem_name)
+                shm = mmap(fd=shmref.fd, length=size)
+                shmref.close_fd()
+            except Exception as exc:
+                try:
+                    shmref.unlink()
+                except (NameError, posix_ipc.ExistentialError):
+                    pass
+                raise PlatoonError("Failed to get access to shared memory buffer.", exc)
+            shared_array = numpy.ndarray(internal.shape, dtype=internal.dtype,
+                                         buffer=shm, offset=0, order=order)
+            self._shmem_names[array] = shared_mem_name  # Keep for common ref with Controller
+            self._shmrefs[array] = shmref  # Keep for unlinking when closing
+            self.shared_arrays[array] = shared_array
+            return shared_array
 
     def all_reduce(self, src, op, dest=None):
         """AllReduce collective operation for workers in a multi-node/gpu platoon.
@@ -361,13 +362,7 @@ class Worker(object):
         # If running with multi-node mode
         if self._multinode:
             # Create new shared buffer which corresponds to result GpuArray buffer
-            if dest is None:
-                self.new_linked_shared(res)
-            else:
-                if dest not in self.shared_arrays:
-                    self.new_linked_shared(dest)
-
-            res_array = self.shared_arrays[res]
+            res_array = self.new_linked_shared(res)
 
             self.lock()
             first = self.send_req("platoon-am_i_first")
