@@ -13,7 +13,7 @@ import numpy as np
 worker = Worker(control_port=5567)
 
 
-def profile(shape=(1000,), dtype='float64', rng=(0, 1)):
+def profile(shape=(1000, 1000), dtype='float64', rng=(-1, 1)):
     print("\n### Profiling worker")
     print()
     print("### shape =", shape)
@@ -45,7 +45,7 @@ def profile(shape=(1000,), dtype='float64', rng=(0, 1)):
         print("## during the first time.")
 
 
-def benchmark(shape=(1000,), dtype='float64', rng=(0, 1), number=100):
+def benchmark(shape=(1000, 1000), dtype='float64', rng=(-1, 1), number=10):
     print("\n### Benchmarking worker")
     print()
     print("### shape =", shape)
