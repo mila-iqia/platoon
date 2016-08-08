@@ -41,7 +41,7 @@ def profile(shape=(1000, 1000), dtype='float64', rng=(-1, 1)):
     s.strip_dirs().sort_stats("time").print_stats()
     if worker._multinode:
         print("## Note that there must be difference between the first and")
-        print("## the second call as a result of the extra call to worker.new_linked_shared")
+        print("## the second call as a result of the extra call to worker.shared")
         print("## during the first time.")
 
 
@@ -60,27 +60,27 @@ def benchmark(shape=(1000, 1000), dtype='float64', rng=(-1, 1), number=10):
     out = np.empty_like(inp)
     sout = theano.shared(out)
 
-    print("\n## Benchmarking worker.new_linked_shared")
+    print("\n## Benchmarking worker.shared")
     print("# First call")
     start = timer()
-    worker.new_linked_shared(sinp)
+    worker.shared(sinp)
     end = timer()
     print("Time:", end - start)
     print("# Second call")
     start = timer()
-    worker.new_linked_shared(sinp)
+    worker.shared(sinp)
     end = timer()
     print("Time:", end - start)
 
     print("\n## Benchmarking worker.all_reduce")
     print("# First call to worker.all_reduce")
-    print("# Contains call to worker.new_linked_shared internally, if multi-node")
+    print("# Contains call to worker.shared internally, if multi-node")
     start = timer()
     worker.all_reduce(sinp, '+', sout)
     end = timer()
     print("Time:", end - start)
 
-    print("# Timing worker.all_reduce w/o calls to worker.new_linked_shared")
+    print("# Timing worker.all_reduce w/o calls to worker.shared")
     ttime = 0
     for _ in range(number):
         start = timer()

@@ -243,7 +243,7 @@ class Worker(object):
 #                            New Control Interface                             #
 ################################################################################
 
-    def new_linked_shared(self, array):
+    def shared(self, array):
         """Creates a new posix shared memory buffer to be shared among Workers
         and their Controller and maps `array` to that buffer.
 
@@ -362,7 +362,7 @@ class Worker(object):
         # If running with multi-node mode
         if self._multinode:
             # Create new shared buffer which corresponds to result GpuArray buffer
-            res_array = self.new_linked_shared(res)
+            res_array = self.shared(res)
 
             self.lock()
             first = self.send_req("platoon-am_i_first")
