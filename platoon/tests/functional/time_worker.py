@@ -61,6 +61,12 @@ def benchmark(shape=(1000, 1000), dtype='float64', rng=(-1, 1), number=10):
     sout = theano.shared(out)
 
     print("\n## Benchmarking worker.new_linked_shared")
+    print("# First call")
+    start = timer()
+    worker.new_linked_shared(sinp)
+    end = timer()
+    print("Time:", end - start)
+    print("# Second call")
     start = timer()
     worker.new_linked_shared(sinp)
     end = timer()
