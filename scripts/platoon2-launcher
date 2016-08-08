@@ -98,9 +98,11 @@ if __name__ == '__main__':
     if not os.path.isfile("./{}_worker.py".format(args.experiment_name)):
         print("\nERROR! Cannot find worker executable: {}_worker.py".format(args.experiment_name))
         sys.exit(2)
-    # TODO check for custom controller executable, else use default
-    # so far this launcher supports only default controller type: platoon
-    controller_type = "platoon"
+    # check for custom controller executable, else use default
+    if os.path.isfile("./{}_controller.py".format(args.experiment_name)):
+        controller_type = args.experiment_name
+    else:
+        controller_type = "platoon"
 
     # If not specified in launcher, check for other configuration types
     if args.hosts is None:
