@@ -45,7 +45,7 @@ class Controller(object):
         The port number to communicate over
     control_port : int
         The control port number.
-    device_list : list of strings
+    devices : list of strings
         Contains device names in clique order (prefer ring topology)
     hwm : int
         High water mark (see pyzmq docs).
@@ -53,23 +53,26 @@ class Controller(object):
     """
 
     def __init__(self, control_port, port=None, hwm=10, experiment=None,
-                 local_size=0, device_list=list(), multinode=False):
+                 devices=list(), multinode=False):
         self._should_stop = False
         self._workers = set()
         self._need_init = True
 
-        self._device_list = device_list
-        self._local_size = local_size
-        self._get_region_info_count = [0]
+        self._devices = devices
+        self._local_size = len(devices)
+        self._global_size = self._local_size
+        self._get_platoon_info_count = [0]
         self._init_new_shmem_count = [0]
         self._am_i_first_count = [0]
+
+        signal.signal(signal.SIGTERM, self._handle_force_close)
+        signal.signal(signal.SIGINT, self._handle_force_close)
 
         # If we are starting a multi-node training (new interface)
         self._multinode = multinode
         if self._multinode:
             try:
-                self._init_global_comm()
-                signal.signal(signal.SIGTERM, self._handle_force_close)
+                self._init_region_comm()
             except AttributeError as exc:
                 print("WARNING! {} while being in multi-node mode".format(exc),
                       file=sys.stderr)
@@ -79,7 +82,7 @@ class Controller(object):
 
         self._init_control_socket(control_port)
 
-        # Cleanup and init global lock and job_uid name ##
+        # Cleanup and init local lock and job_uid name
         self._job_uid = "platoon_{0}_{1}".format(
             os.path.basename(os.path.expanduser('~')), control_port)
 
@@ -106,8 +109,8 @@ class Controller(object):
             except OSError:
                 pass
             try:
-                for i in range(self._local_size):
-                    p = launch_process(experiment[1], experiment[0], None, self._device_list[i], "worker")
+                for device in self._devices:
+                    p = launch_process(experiment[1], experiment[0], None, device, "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
                 print("ERROR! OS error in Popen: {}".format(exc), file=sys.stderr)
@@ -206,8 +209,8 @@ class Controller(object):
         elif req == "platoon-am_i_first":
             response = self._is_worker_first(self._am_i_first_count)
 
-        elif req == "platoon-get_region_info":
-            response = self._get_region_info(req_info)
+        elif req == "platoon-get_platoon_info":
+            response = self._get_platoon_info(req_info)
 
         elif req == "platoon-init_new_shmem":
             response = self._init_new_shmem(req_info)
@@ -231,15 +234,16 @@ class Controller(object):
             return True
         return False
 
-    def _get_region_info(self, req_info):
-        first = self._is_worker_first(self._get_region_info_count)  # See :ref:`_is_worker_first`
+    def _get_platoon_info(self, req_info):
+        first = self._is_worker_first(self._get_platoon_info_count)  # See :ref:`_is_worker_first`
         if first:
-            self._region_id = "platoon-" + req_info['region_id']
+            self._local_id = "platoon-" + req_info['local_id']
         response = dict()
-        response['region_id'] = self._region_id
-        response['region_size'] = self._local_size
-        response['regional_rank'] = self._device_list.index(req_info['device'])
+        response['local_id'] = self._local_id
+        response['local_size'] = self._local_size
+        response['local_rank'] = self._devices.index(req_info['device'])
         response['multinode'] = self._multinode
+        response['global_size'] = self._global_size
         return response
 
     def _init_new_shmem(self, req_info):
@@ -284,7 +288,7 @@ class Controller(object):
         try:
             mpi_op = op_to_mpi(op)
             mpi_dtype = dtype_to_mpi(dtype)
-            self._global_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
+            self._region_comm.Allreduce([array, mpi_dtype], [array, mpi_dtype],
                                         op=mpi_op)
         except Exception as exc:
             raise PlatoonError("Failed to execute all_reduce across nodes on \
@@ -355,19 +359,22 @@ class Controller(object):
             self._close()
         return self._success
 
-    def _init_global_comm(self):
+    def _init_region_comm(self):
         if MPI is None:
             raise AttributeError("mpi4py is not imported")
-        self._global_comm = MPI.COMM_WORLD
-        self._global_size = MPI.COMM_WORLD.Get_size()
-        self._global_rank = MPI.COMM_WORLD.Get_rank()
+        self._region_comm = MPI.COMM_WORLD
+        self._region_size = MPI.COMM_WORLD.Get_size()
+        self._region_rank = MPI.COMM_WORLD.Get_rank()
+        global_size = numpy.array([self._global_size])
+        self._region_comm.Allreduce(global_size, global_size, op=MPI.SUM)
+        self._global_size = global_size[0]
 
     def _clean(self):
         print("Cleaning up...", file=sys.stderr)
         self._kill_workers()
         if self._multinode:
             print("Aborting MPI job...", file=sys.stderr)
-            self._global_comm.Abort(errorcode=1)
+            self._region_comm.Abort(errorcode=1)
 
     def _kill_workers(self):
         while self._workers:
@@ -482,8 +489,7 @@ def spawn_controller():
 
     controller = Controller(control_port=5567,
                             experiment=(args.experiment_name, args.log_directory),
-                            local_size=workers,
-                            device_list=devices,
+                            devices=devices[:workers],
                             multinode=not args.single)
     return controller.serve()
 

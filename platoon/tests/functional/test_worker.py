@@ -19,6 +19,9 @@ class TestWorker(unittest.TestCase):
             print(exc, file=sys.stderr)
             raise exc
 
+    def test_global_size(self):
+        assert self.worker.global_size == self.total_nw
+
     def test_interface1(self):
         try:
             inp = np.arange(32, dtype='float64')

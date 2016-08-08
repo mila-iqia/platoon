@@ -80,11 +80,11 @@ class Worker(object):
         try:
             self._register_to_platoon()
         except Exception as exc:
-            print(PlatoonWarning("Failed to register in a regional GPU comm world.", exc),
+            print(PlatoonWarning("Failed to register in a local GPU comm world.", exc),
                   file=sys.stderr)
             print(PlatoonWarning("Platoon new interface will not be functional."),
                   file=sys.stderr)
-            self._regional_comm = None
+            self._local_comm = None
         self._shmem_names = dict()
         self._shmrefs = dict()
         self.shared_arrays = dict()
@@ -152,16 +152,18 @@ class Worker(object):
         if pygpu:
             gpuctx = theanoga.get_context(None)
             self.device = theanoconf.device
-            self._region_id = gpucoll.GpuCommCliqueId(context=gpuctx)
-            # Ask controller for region's info to participate in
-            response = self.send_req("platoon-get_region_info",
+            self._local_id = gpucoll.GpuCommCliqueId(context=gpuctx)
+            # Ask controller for local's info to participate in
+            response = self.send_req("platoon-get_platoon_info",
                                      info={'device': self.device,
-                                           'region_id': self._region_id.comm_id.decode('utf-8')})
-            self._region_id.comm_id = bytearray(response['region_id'].encode('utf-8'))
-            self._regional_comm = gpucoll.GpuComm(self._region_id,
-                                                  response['region_size'],
-                                                  response['regional_rank'])
+                                           'local_id': self._local_id.comm_id.decode('utf-8')})
+            self._local_id.comm_id = bytearray(response['local_id'].encode('utf-8'))
+            self._local_size = response['local_size']
+            self._local_comm = gpucoll.GpuComm(self._local_id,
+                                               self._local_size,
+                                               response['local_rank'])
             self._multinode = response['multinode']
+            self._global_size = response['global_size']
         else:
             raise AttributeError("pygpu or theano is not imported")
 
@@ -238,6 +240,15 @@ class Worker(object):
         """
         self._lock.release()
 
+    @property
+    def local_size(self):
+        "Number of workers assigned to local host's controller"
+        return self._local_size
+
+    @property
+    def global_size(self):
+        "Number of workers spawned across all hosts in total"
+        return self._global_size
 
 ################################################################################
 #                            New Control Interface                             #
@@ -329,7 +340,7 @@ class Worker(object):
 
         """
 
-        if self._regional_comm is None:
+        if self._local_comm is None:
             raise PlatoonError("New interface is not available. Check log.")
 
         if isinstance(src, theanoga.GpuArraySharedVariable):
@@ -347,8 +358,8 @@ class Worker(object):
 
         try:
             # Execute collective operation in local NCCL communicator world
-            internal_res = self._regional_comm.all_reduce(internal_src,
-                                                          op, internal_dest)
+            internal_res = self._local_comm.all_reduce(internal_src,
+                                                       op, internal_dest)
         except Exception as exc:
             raise PlatoonError("Failed to execute pygpu all_reduce", exc)
 
