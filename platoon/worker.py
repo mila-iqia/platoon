@@ -353,6 +353,10 @@ class Worker(object):
 
         if dest is None:
             res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
+        else:
+            res = dest
+            internal_res = internal_dest
+        internal_res.sync()
 
         # If running with multi-node mode
         if self._multinode:
@@ -362,8 +366,6 @@ class Worker(object):
             else:
                 if dest not in self.shared_arrays:
                     self.new_linked_shared(dest)
-                res = dest
-                internal_res = internal_dest
 
             res_array = self.shared_arrays[res]
 
@@ -372,6 +374,7 @@ class Worker(object):
             if first:
                 # Copy from GpuArray to shared memory buffer
                 internal_res.read(res_array)
+                internal_res.sync()
 
                 # Request from controller to perform the same collective operation
                 # in MPI communicator world using shared memory buffer
@@ -383,6 +386,7 @@ class Worker(object):
             # Concurrently copy from shared memory back to result GpuArray
             # after Controller has finished global collective operation
             internal_res.write(res_array)
+            internal_res.sync()
 
         if dest is None:
             return res
