@@ -68,7 +68,7 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
             else:
                 executable = ["{0}_{1}.py".format(experiment_name, process_type)]
             command = ["python", "-u"] + executable
-            if args is not None:
+            if args:
                 command += args
             process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
 

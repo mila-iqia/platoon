@@ -4,6 +4,7 @@ import os
 import sys
 import signal
 import time
+import shlex
 
 from six.moves import range
 
@@ -41,19 +42,23 @@ class Controller(object):
 
     Parameters
     ----------
-    port : int
-        The port number to communicate over
     control_port : int
         The control port number.
+    data_port : int
+        The data port number.
+    data_hwm : int
+        High water mark (see pyzmq docs).
+    experiment : tuple of 3 strings
+        (experiment name, log directory, worker arguments)
     devices : list of strings
         Contains device names in clique order (prefer ring topology)
-    hwm : int
-        High water mark (see pyzmq docs).
+    multinode : bool
+        True, if we start a multi-node experiment. Flag to start MPI.
 
     """
 
-    def __init__(self, control_port, port=None, hwm=10, experiment=None,
-                 devices=list(), multinode=False):
+    def __init__(self, control_port, data_port=None, data_hwm=10,
+                 experiment=None, devices=list(), multinode=False):
         self._should_stop = False
         self._workers = set()
         self._need_init = True
@@ -77,8 +82,8 @@ class Controller(object):
                 print("WARNING! {} while being in multi-node mode".format(exc),
                       file=sys.stderr)
 
-        if port:
-            self.init_data(port, hwm)
+        if data_port:
+            self.init_data(data_port, data_hwm)
 
         self._init_control_socket(control_port)
 
@@ -110,7 +115,9 @@ class Controller(object):
                 pass
             try:
                 for device in self._devices:
-                    p = launch_process(experiment[1], experiment[0], None, device, "worker")
+                    p = launch_process(experiment[1], experiment[0],
+                                       shlex.split(experiment[2] or ''), device,
+                                       "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
                 print("ERROR! OS error in Popen: {}".format(exc), file=sys.stderr)
@@ -436,6 +443,10 @@ def parse_arguments():
                         required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
     parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
                         required=False, help='Number of workers spawned by this controller for this host.')
+    parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
+    parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
+    parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
+    parser.add_argument('--data-hwm', default=10, type=int, required=False, help='The data port high water mark')
 
     return parser.parse_args()
 
@@ -487,8 +498,10 @@ def spawn_controller():
 
     workers, devices = get_workers_devices(args)
 
-    controller = Controller(control_port=5567,
-                            experiment=(args.experiment_name, args.log_directory),
+    controller = Controller(control_port=args.control_port,
+                            data_port=args.data_port,
+                            data_hwm=args.data_hwm,
+                            experiment=(args.experiment_name, args.log_directory, args.worker_args),
                             devices=devices[:workers],
                             multinode=not args.single)
     return controller.serve()

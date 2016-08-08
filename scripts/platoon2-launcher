@@ -83,6 +83,8 @@ multi-node.'''))
                                  required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
     single_or_multi.add_argument('-H', '--hosts', nargs='+', type=str, metavar='hostname',
                                  required=False, help='List of host names to participate in multi-node training. Each host will be assigned to a separate controller. If this option is specified, experiment will be run in multiple nodes.')
+    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controllers. (Ex: -c="--sync_rule EASGD")')
+    parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
 
     return parser.parse_args()
 
@@ -146,9 +148,10 @@ if __name__ == '__main__':
                     command += [args.experiment_name, logs_folder, "--multi"]
                     if args.workers:
                         command += ["-nw", str(args.workers[i])]
-                    # TODO Support controller args
-                    #  if args is not None:
-                    #      command += args
+                    if args.controller_args:
+                        command += shlex.split(args.controller_args)
+                    if args.worker_args:
+                        command += ["-w", args.worker_args]
                     if i != len(num_of_workers) - 1:
                         command += ":"
                 try:
@@ -190,9 +193,10 @@ if __name__ == '__main__':
                 num_of_workers = None
         if num_of_workers:
             controller_args += ["-nw", str(num_of_workers)]
-        # TODO Support controller args
-        #  if args is not None:
-        #      command += args
+        if args.controller_args:
+            controller_args += shlex.split(args.controller_args)
+        if args.worker_args:
+            controller_args += ["-w", args.worker_args]
 
         print("### Starting single-node multi-gpu training")
         try:
