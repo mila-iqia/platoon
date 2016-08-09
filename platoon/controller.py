@@ -6,6 +6,7 @@ import signal
 import time
 import shlex
 
+import six
 from six.moves import range
 
 import argparse
@@ -57,14 +58,16 @@ class Controller(object):
 
     """
 
-    def __init__(self, control_port, data_port=None, data_hwm=10,
-                 experiment=None, devices=list(), multinode=False):
-        self._should_stop = False
+    def __init__(self, control_port=5567, data_port=None, data_hwm=10,
+                 devices=None, workers=None, experiment_name='',
+                 log_directory='', worker_args='', multi=False):
         self._workers = set()
         self._need_init = True
 
-        self._devices = devices
-        self._local_size = len(devices)
+        self._devices = list()
+        if devices is not None:
+            self._devices = get_workers_devices(not multi, devices, workers)
+        self._local_size = len(self._devices)
         self._global_size = self._local_size
         self._get_platoon_info_count = [0]
         self._init_new_shmem_count = [0]
@@ -74,7 +77,7 @@ class Controller(object):
         signal.signal(signal.SIGINT, self._handle_force_close)
 
         # If we are starting a multi-node training (new interface)
-        self._multinode = multinode
+        self._multinode = multi
         if self._multinode:
             try:
                 self._init_region_comm()
@@ -107,16 +110,15 @@ class Controller(object):
         self.shared_buffers = dict()
 
         # If we are using the new interface, then initialize workers
-        if experiment:
-            # TODO maybe think something smarter for (multi-node) worker logging
+        if experiment_name:
             try:
-                os.makedirs(experiment[1])
+                os.makedirs(log_directory)
             except OSError:
                 pass
             try:
                 for device in self._devices:
-                    p = launch_process(experiment[1], experiment[0],
-                                       shlex.split(experiment[2] or ''), device,
+                    p = launch_process(log_directory, experiment_name,
+                                       shlex.split(worker_args or ''), device,
                                        "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
@@ -126,63 +128,9 @@ class Controller(object):
                 print("ERROR! Other while launching process: {}".format(exc), file=sys.stderr)
                 sys.exit(4)
 
-    def init_data(self, port, hwm=10):
-        """
-        Initialize the mini-batch socket.
-
-        This must be called before using :meth:`send_mb`.
-
-        Parameters
-        ----------
-        port : int
-            The port to listen on.
-        hwm : int
-            High water mark, see the pyzmq docs.
-
-        """
-        self.acontext = zmq.Context()
-        self.asocket = self.acontext.socket(zmq.PUSH)
-        self.asocket.set_hwm(hwm)
-        self.asocket.bind('tcp://*:{}'.format(port))
-
-    def _init_control_socket(self, port):
-        """
-        Initialize the control socket.
-
-        This must be called before using :meth:`serve`.
-
-        Parameters
-        ----------
-        port : int
-            The port to listen on.
-
-        """
-        self.ccontext = zmq.Context()
-        self.csocket = self.ccontext.socket(zmq.REP)
-        self.csocket.bind('tcp://*:{}'.format(port))
-
-    def send_mb(self, arrays):
-        """
-        Send a mini-batch over the socket.
-
-        This function may block if arrays are being sent faster than
-        the clients can handle.
-
-        Parameters
-        ----------
-        arrays : list of ndarrays
-            List of numpy.ndarray to send.  All arrays should be
-            contiguous for better performance.
-
-        """
-        # The buffer protocol only works on contiguous arrays
-        arrays = [numpy.ascontiguousarray(array) for array in arrays]
-        headers = [numpy.lib.format.header_data_from_array_1_0(array)
-                   for array in arrays]
-        self.asocket.send_json(headers, zmq.SNDMORE)
-        for array in arrays[:-1]:
-            self.asocket.send(array, zmq.SNDMORE)
-        self.asocket.send(arrays[-1])
+################################################################################
+#                         Control Serving and Handling                         #
+################################################################################
 
     def handle_control(self, req, worker_id, req_info):
         """
@@ -195,9 +143,10 @@ class Controller(object):
         encoding and the network.
 
         """
-        raise NotImplementedError("Classes that "
-                                  "inherit from Controller should probably override "
-                                  "the method `handle_control()`")
+        raise NotImplementedError("Request type '{0}' is not developed in class "
+                                  "{1}. A class should inherit {1} and "
+                                  "override method `handle_control` in order to add "
+                                  "behavior.".format(req, __class__.__name__))
 
     def _handle_base_control(self, req, worker_id, req_info):
         """
@@ -226,6 +175,174 @@ class Controller(object):
             response = self._all_reduce(req_info)
 
         return response
+
+    # Method `worker_is_done` is not supported anymore.
+    # Rationale:
+    # 1. For supporting multi-node controllers it was necessary to move the
+    # spawning of worker process to Controller object, so Controller needs to
+    # wait for the exit of its worker children. This was done for the following
+    # reasons:
+    #     a. controller processes may be MPI processes, while worker processes
+    #     are not.
+    #     b. In multi-node case, worker processes have to be spawned in a
+    #     another host than the one executing the launcher.
+    #     c. It would be better, if there was a uniform way to spawn worker
+    #     process which is independent whether we are in the single-node or
+    #     multi-node case.
+    # 2. Given (1): Each process oughts to take care cleaning and exiting
+    # gracefully by itself, unless a fatal error has happened or a irrecovable
+    # error for the procedure has happened, in which case process should exit
+    # normally with non-success code. In fatal or irrecovable cases, their
+    # father process (i.e controller) must kill them (forcing them to exit
+    # gracefully, if possible).
+    #  def worker_is_done(self, worker_id):
+    #      self._workers.discard(worker_id)
+    #      self._should_stop = True
+
+    def serve(self):
+        """This method will handle control messages until an error happens or
+        all children-worker processes exit.
+
+        Handles controller finilization  by cleaning, logging and returning
+        if controller was successful or not.
+
+        """
+        try:  # spin spin spin
+            while self._workers:  # spin while we have still children to watch for
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except OSError as exc:
+                    raise PlatoonError("while waiting for a child", exc)
+                if pid != 0:  # If a status change has happened at a child
+                    if os.WIFEXITED(status):
+                        self._workers.discard(pid)
+                        self._success = os.WEXITSTATUS(status)
+                        if self._success == 0:
+                            # A worker has terminated normally. Other workers
+                            # are expected to terminate normally too, so
+                            # continue.
+                            continue
+                        else:
+                            # A worker has not terminated normally due to an
+                            # error or an irrecovable fault
+                            raise PlatoonError("A worker has exited with non-success code: {}".format(self._success))
+                    else:  # other status changes are not desirable
+                        raise PlatoonError("A worker has changed to a status other than exit.")
+                try:
+                    query = self.csocket.recv_json(flags=zmq.NOBLOCK)
+                except zmq.Again:  # if a query has not happened, try again
+                    continue
+                except zmq.ZMQError as exc:
+                    raise PlatoonError("while receiving using zmq socket", exc)
+
+                # try default interface, it may raise PlatoonError
+                response = self._handle_base_control(query['req'],
+                                                     query['worker_id'],
+                                                     query['req_info'])
+                if response is None:
+                    response = self.handle_control(query['req'],
+                                                   query['worker_id'],
+                                                   query['req_info'])
+
+                try:
+                    self.csocket.send_json(response)
+                except zmq.ZMQError as exc:
+                    raise PlatoonError("while sending using zmq socket", exc)
+        except PlatoonError as exc:  # if platoon fails kill all children workers
+            print(exc, file=sys.stderr)
+            self._clean()
+        except Exception as exc:
+            print(PlatoonError("Unexpected exception", exc), file=sys.stderr)
+            self._clean()
+        finally:  # Close sockets and unlink for shared memory
+            self._close()
+        return self._success
+
+################################################################################
+#                   Initialization and Finilization Methods                    #
+################################################################################
+
+    def _init_control_socket(self, port):
+        """
+        Initialize the control socket.
+
+        This must be called before using :meth:`serve`.
+
+        Parameters
+        ----------
+        port : int
+            The port to listen on.
+
+        """
+        self.ccontext = zmq.Context()
+        self.csocket = self.ccontext.socket(zmq.REP)
+        self.csocket.bind('tcp://*:{}'.format(port))
+
+    def _init_region_comm(self):
+        if MPI is None:
+            raise AttributeError("mpi4py is not imported")
+        self._region_comm = MPI.COMM_WORLD
+        self._region_size = MPI.COMM_WORLD.Get_size()
+        self._region_rank = MPI.COMM_WORLD.Get_rank()
+        global_size = numpy.array([self._global_size])
+        self._region_comm.Allreduce(global_size, global_size, op=MPI.SUM)
+        self._global_size = global_size[0]
+
+    def _clean(self):
+        print("Cleaning up...", file=sys.stderr)
+        self._kill_workers()
+        if self._multinode:
+            print("Aborting MPI job...", file=sys.stderr)
+            self._region_comm.Abort(errorcode=1)
+
+    def _kill_workers(self):
+        while self._workers:
+            pid = self._workers.pop()
+            print("Killing worker {}...".format(pid), file=sys.stderr)
+            while True:
+                try:
+                    os.kill(pid, signal.SIGINT)
+                    break
+                except OSError:
+                    pass
+            try:
+                pid, status = os.waitpid(pid, 0)
+            except OSError:
+                pass
+
+    def _close(self):
+        print("Closing connections and unlinking memory...", file=sys.stderr)
+        self.csocket.close()
+        self.ccontext.term()
+        if hasattr(self, 'asocket'):
+            self.asocket.close()
+            self.acontext.term()
+        self._lock.close()
+        try:
+            self._lock.unlink()
+        except posix_ipc.ExistentialError:
+            pass
+        for shmref in self._shmrefs.values():
+            try:
+                shmref.unlink()
+            except posix_ipc.ExistentialError:
+                pass
+
+    def _handle_force_close(self, signum, frame):
+        """Handle SIGTERM signals from MPI.Abort
+
+        This is expected to happen when something abnormal has happened in other
+        controllers over MPI.COMM_WORLD across host which participate in the
+        multi-node training.
+
+        """
+        self._kill_workers()
+        self._close()
+        sys.exit(1)
+
+################################################################################
+#                               Control Requests                               #
+################################################################################
 
     def _is_worker_first(self, counter):
         """Returns True, if in a mass request in a local platoon (workers in a
@@ -302,210 +419,131 @@ class Controller(object):
                                request: {}".format(req_info), exc)
         return ""  # So as to show that request type has been found
 
-    #  def worker_is_done(self, worker_id):
-    #      self._workers.discard(worker_id)
-    #      self._should_stop = True
+################################################################################
+#                           Distribute Data Batches                            #
+################################################################################
 
-    def serve(self):
-        """This method will handle control messages until an error happens or
-        all children-worker processes exit.
+    def init_data(self, port, hwm=10):
+        """
+        Initialize the mini-batch socket.
 
-        Handles controller finilization  by cleaning, logging and returning
-        if controller was successful or not.
+        This must be called before using :meth:`send_mb`.
+
+        Parameters
+        ----------
+        port : int
+            The port to listen on.
+        hwm : int
+            High water mark, see the pyzmq docs.
 
         """
-        try:  # spin spin spin
-            #  while (not self._should_stop) or self._workers:
-            while self._workers:  # spin while we have still children to watch for
-                try:
-                    pid, status = os.waitpid(-1, os.WNOHANG)
-                except OSError as exc:
-                    raise PlatoonError("while waiting for a child", exc)
-                if pid != 0:  # If a status change has happened at a child
-                    if os.WIFEXITED(status):
-                        self._workers.discard(pid)
-                        self._success = os.WEXITSTATUS(status)
-                        if self._success == 0:
-                            # A worker has terminated normally. Other workers
-                            # are expected to terminate normally too, so
-                            # continue.
-                            continue
-                        else:
-                            # A worker has not terminated normally due to an
-                            # error or an irrecovable fault
-                            raise PlatoonError("A worker has exited with non-success code: {}".format(self._success))
-                    else:  # other status changes are not desirable
-                        raise PlatoonError("A worker has changed to a status other than exit.")
-                try:
-                    query = self.csocket.recv_json(flags=zmq.NOBLOCK)
-                except zmq.Again:  # if a query has not happened, try again
-                    continue
-                except zmq.ZMQError as exc:
-                    raise PlatoonError("while receiving using zmq socket", exc)
+        self.acontext = zmq.Context()
+        self.asocket = self.acontext.socket(zmq.PUSH)
+        self.asocket.set_hwm(hwm)
+        self.asocket.bind('tcp://*:{}'.format(port))
 
-                # try default interface, it may raise PlatoonError
-                response = self._handle_base_control(query['req'],
-                                                     query['worker_id'],
-                                                     query['req_info'])
-                if response is None:
-                    response = self.handle_control(query['req'],
-                                                   query['worker_id'],
-                                                   query['req_info'])
+    def send_mb(self, arrays):
+        """
+        Send a mini-batch over the socket.
 
-                try:
-                    self.csocket.send_json(response)
-                except zmq.ZMQError as exc:
-                    raise PlatoonError("while sending using zmq socket", exc)
-        except PlatoonError as exc:  # if platoon fails kill all children workers
-            print(exc, file=sys.stderr)
-            self._clean()
-        except Exception as exc:
-            print(PlatoonError("Unexpected exception", exc), file=sys.stderr)
-            self._clean()
-        finally:  # Close sockets and unlink for shared memory
-            self._close()
-        return self._success
+        This function may block if arrays are being sent faster than
+        the clients can handle.
 
-    def _init_region_comm(self):
-        if MPI is None:
-            raise AttributeError("mpi4py is not imported")
-        self._region_comm = MPI.COMM_WORLD
-        self._region_size = MPI.COMM_WORLD.Get_size()
-        self._region_rank = MPI.COMM_WORLD.Get_rank()
-        global_size = numpy.array([self._global_size])
-        self._region_comm.Allreduce(global_size, global_size, op=MPI.SUM)
-        self._global_size = global_size[0]
-
-    def _clean(self):
-        print("Cleaning up...", file=sys.stderr)
-        self._kill_workers()
-        if self._multinode:
-            print("Aborting MPI job...", file=sys.stderr)
-            self._region_comm.Abort(errorcode=1)
-
-    def _kill_workers(self):
-        while self._workers:
-            pid = self._workers.pop()
-            print("Killing worker {}...".format(pid), file=sys.stderr)
-            while True:
-                try:
-                    os.kill(pid, signal.SIGINT)
-                    break
-                except OSError:
-                    pass
-            try:
-                pid, status = os.waitpid(pid, 0)
-            except OSError:
-                pass
-
-    def _close(self):
-        print("Closing connections and unlinking memory...", file=sys.stderr)
-        self.csocket.close()
-        self.ccontext.term()
-        if hasattr(self, 'asocket'):
-            self.asocket.close()
-            self.acontext.term()
-        self._lock.close()
-        try:
-            self._lock.unlink()
-        except posix_ipc.ExistentialError:
-            pass
-        for shmref in self._shmrefs.values():
-            try:
-                shmref.unlink()
-            except posix_ipc.ExistentialError:
-                pass
-
-    def _handle_force_close(self, signum, frame):
-        """Handle SIGTERM signals from MPI.Abort
-
-        This is expected to happen when something abnormal has happened in other
-        controllers over MPI.COMM_WORLD across host which participate in the
-        multi-node training.
+        Parameters
+        ----------
+        arrays : list of ndarrays
+            List of numpy.ndarray to send.  All arrays should be
+            contiguous for better performance.
 
         """
-        self._kill_workers()
-        self._close()
-        sys.exit(1)
+        # The buffer protocol only works on contiguous arrays
+        arrays = [numpy.ascontiguousarray(array) for array in arrays]
+        headers = [numpy.lib.format.header_data_from_array_1_0(array)
+                   for array in arrays]
+        self.asocket.send_json(headers, zmq.SNDMORE)
+        for array in arrays[:-1]:
+            self.asocket.send(array, zmq.SNDMORE)
+        self.asocket.send(arrays[-1])
 
+    @staticmethod
+    def get_workers_devices(single, devices, workers):
+        # Get Controller's devices
+        import socket
+        hostname = socket.gethostname()
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Base Platoon Controller process. Reigns over a computer node.")
-    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
-    parser.add_argument('log_directory', help='Directory where logging info and error files will exist.')
-    single_or_multi = parser.add_mutually_exclusive_group(required=True)
-    single_or_multi.add_argument('--single', action='store_true',
-                                 help='Indicates that this Controller participates in a single-node platoon.')
-    single_or_multi.add_argument('--multi', action='store_false',
-                                 help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
-    parser.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
-                        required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
-    parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
-                        required=False, help='Number of workers spawned by this controller for this host.')
-    parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
-    parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
-    parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
-    parser.add_argument('--data-hwm', default=10, type=int, required=False, help='The data port high water mark')
-
-    return parser.parse_args()
-
-
-def get_workers_devices(args):
-    # Get Controller's devices
-    import socket
-    hostname = socket.gethostname()
-
-    if args.single and args.devices:
-        # 1. Use device names from arguments if they are specified
-        devices = args.devices
-    else:
-        # 2. Try device names from configuration
-        from platoon import configparser
-        try:
-            devices = configparser.fetch_devices_for_host(hostname)
-        except KeyError:
-            # 3. Else try to use all compatible GPUs in host
-            try:
-                print("WARNING! Using all compatible GPUs in host.", file=sys.stderr)
-                from pygpu import gpuarray as ga
-                devcount = ga.count_devices("cuda", 0)
-                devices = ["cuda" + str(i) for i in range(devcount)]
-            except ImportError:
-                print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
-                sys.exit(2)
-            except Exception as exc:
-                print("ERROR! pygpu: {}".format(exc), file=sys.stderr)
-                print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
-                sys.exit(2)
-
-    if args.workers:
-        if args.workers > len(devices):
-            print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(args.workers, len(devices)),
-                  file=sys.stderr)
-            workers = len(devices)
+        if single and devices:
+            # 1. Use device names from arguments if they are specified
+            devices_found = devices
         else:
-            workers = args.workers
-    else:
-        workers = len(devices)
+            # 2. Try device names from configuration
+            from platoon import configparser
+            try:
+                devices_found = configparser.fetch_devices_for_host(hostname)
+            except KeyError:
+                # 3. Else try to use all compatible GPUs in host
+                try:
+                    print("WARNING! Using all compatible GPUs in host.", file=sys.stderr)
+                    from pygpu import gpuarray as ga
+                    devcount = ga.count_devices("cuda", 0)
+                    devices_found = ["cuda" + str(i) for i in range(devcount)]
+                except ImportError:
+                    print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
+                    sys.exit(2)
+                except Exception as exc:
+                    print("ERROR! pygpu: {}".format(exc), file=sys.stderr)
+                    print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
+                    sys.exit(2)
 
-    print("## On " + hostname + " using: " + " ".join(devices[:workers]))
-    return workers, devices
+        if workers:
+            if workers > len(devices):
+                print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(workers, len(devices)),
+                      file=sys.stderr)
+                workers_found = len(devices)
+            else:
+                workers_found = workers
+        else:
+            workers_found = len(devices)
+
+        final_devices = devices_found[:workers_found]
+        print("## On " + hostname + " using: " + " ".join(final_devices))
+        return final_devices
+
+    @staticmethod
+    def default_parser():
+        parser = argparse.ArgumentParser(
+            description="Base Platoon Controller process. Reigns over a computer node.")
+        parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+        parser.add_argument('log_directory', help='Directory where logging info and error files will exist.')
+        single_or_multi = parser.add_mutually_exclusive_group(required=True)
+        single_or_multi.add_argument('--single', action='store_true',
+                                     help='Indicates that this Controller participates in a single-node platoon.')
+        single_or_multi.add_argument('--multi', action='store_true',
+                                     help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
+        parser.add_argument('-D', '--devices', default=list(), nargs='+', type=str, metavar='devname',
+                            required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
+        parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
+                            required=False, help='Number of workers spawned by this controller for this host.')
+        parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
+        parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
+        parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
+        parser.add_argument('--data-hwm', default=10, type=int, required=False, help='The data port high water mark')
+
+        return parser
+
+    @staticmethod
+    def default_arguments(args):
+        DEFAULT_KEYS = ['control_port', 'data_port', 'data_hwm',
+                        'devices', 'workers', 'experiment_name',
+                        'log_directory', 'worker_args', 'multi']
+        d = args.__dict__
+        return dict((k, d[k]) for k in six.iterkeys(d) if k in DEFAULT_KEYS)
 
 
 def spawn_controller():
-    args = parse_arguments()
-
-    workers, devices = get_workers_devices(args)
-
-    controller = Controller(control_port=args.control_port,
-                            data_port=args.data_port,
-                            data_hwm=args.data_hwm,
-                            experiment=(args.experiment_name, args.log_directory, args.worker_args),
-                            devices=devices[:workers],
-                            multinode=not args.single)
+    parser = Controller.default_parser()
+    args = parser.parse_args()
+    controller = Controller(**Controller.default_arguments(args))
     return controller.serve()
-
 
 if __name__ == '__main__':
     rcode = spawn_controller()
