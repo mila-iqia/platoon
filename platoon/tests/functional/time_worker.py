@@ -1,4 +1,5 @@
 from __future__ import absolute_import, print_function, division
+import os
 import sys
 import cProfile
 import pstats
@@ -10,6 +11,7 @@ import theano
 import numpy as np
 from numpy.testing import assert_allclose
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from platoon.worker import Worker
 
 SEED = 567
