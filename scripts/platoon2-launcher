@@ -212,26 +212,31 @@ if __name__ == '__main__':
     print("\n### Logs folder ###\n{}".format(logs_folder))
     print("\n### Waiting on experiment to finish ...")
     try:
-        pid, status = os.waitpid(p.pid, 0)
-    except OSError as exc:
-        print("\nERROR! OS error: {}".format(exc))
-        sys.exit(3)
-    if pid != p.pid:
-        print("\nWARNING! Received status for unknown process {}".format(pid))
-        sys.exit(3)
-    if os.WIFEXITED(status):
-        rcode = os.WEXITSTATUS(status)
-        print("## {0} terminated with return code: {1}.".format(experiment_type, rcode))
-        if rcode != 0:
-            print("\nERROR! An error has occured.\nSee logs for more info.")
-            sys.exit(1)
+        try:
+            pid, status = os.waitpid(p.pid, 0)
+        except OSError as exc:
+            print("\nERROR! OS error: {}".format(exc))
+            sys.exit(3)
+        if pid != p.pid:
+            print("\nWARNING! Received status for unknown process {}".format(pid))
+            sys.exit(3)
+        if os.WIFEXITED(status):
+            rcode = os.WEXITSTATUS(status)
+            print("## {0} terminated with return code: {1}.".format(experiment_type, rcode))
+            if rcode != 0:
+                print("\nERROR! An error has occured.\nSee logs for more info.")
+                sys.exit(1)
+            else:
+                print("\nSUCCESS! Training with platoon has finished.")
         else:
-            print("\nSUCCESS! Training with platoon has finished.")
-    else:
-        print("\nWARNING! {} changed status but has not exited.".format(experiment_type))
+            print("\nWARNING! {} changed status but has not exited.".format(experiment_type))
+            raise RuntimeError("ERROR! Unexpected controller status change.")
+    except (RuntimeError, KeyboardInterrupt) as exc:
+        print(exc)
+        print("Killing controller processes...")
         try:
             os.kill(pid, signal.SIGTERM)
-            pid, status = os.waitpid(pid, 0)
+            pid, status = os.waitpid(p.pid, 0)
         except OSError as exc:
             print("\nERROR! OS error: {}".format(exc))
         sys.exit(3)
