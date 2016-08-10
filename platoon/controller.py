@@ -49,24 +49,29 @@ class Controller(object):
         The data port number.
     data_hwm : int
         High water mark (see pyzmq docs).
-    experiment : tuple of 3 strings
-        (experiment name, log directory, worker arguments)
     devices : list of strings
         Contains device names in clique order (prefer ring topology)
-    multinode : bool
+    experiment_name : str
+        Name of experiment given in `platoon_launcher`. Will find
+        <experiment_name>_worker.py with this.
+    log_directory : str
+        Directory in which this controller's workers will create log files.
+    worker_args : str
+        Arguments for workers specified in `platoon_launcher`, if any
+    multi : bool
         True, if we start a multi-node experiment. Flag to start MPI.
 
     """
 
     def __init__(self, control_port=5567, data_port=None, data_hwm=10,
-                 devices=None, workers=None, experiment_name='',
+                 devices=None, experiment_name='',
                  log_directory='', worker_args='', multi=False):
         self._workers = set()
         self._need_init = True
 
         self._devices = list()
         if devices is not None:
-            self._devices = Controller.get_workers_devices(not multi, devices, workers)
+            self._devices = Controller.get_workers_devices(devices)
         self._local_size = len(self._devices)
         self._global_size = self._local_size
         self._get_platoon_info_count = [0]
@@ -472,12 +477,12 @@ class Controller(object):
 ################################################################################
 
     @staticmethod
-    def get_workers_devices(single, devices, workers):
+    def get_workers_devices(devices):
         # Get Controller's devices
         import socket
         hostname = socket.gethostname()
 
-        if single and devices:
+        if devices:
             # 1. Use device names from arguments if they are specified
             devices_found = devices
         else:
@@ -505,19 +510,8 @@ class Controller(object):
             print("ERROR! Cound not find any compatible GPUs in host.", file=sys.stderr)
             sys.exit(4)
 
-        if workers:
-            if workers > len(devices_found):
-                print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(workers, len(devices)),
-                      file=sys.stderr)
-                workers_found = len(devices_found)
-            else:
-                workers_found = workers
-        else:
-            workers_found = len(devices_found)
-
-        final_devices = devices_found[:workers_found]
-        print("## On " + hostname + " using: " + " ".join(final_devices))
-        return final_devices
+        print("## On " + hostname + " using: " + " ".join(devices_found))
+        return devices_found
 
     @staticmethod
     def default_parser():
@@ -532,8 +526,6 @@ class Controller(object):
                                      help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
         parser.add_argument('-D', '--devices', default=list(), nargs='+', type=str, metavar='devname',
                             required=False, help='List of device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
-        parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
-                            required=False, help='Number of workers spawned by this controller for this host.')
         parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
         parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
         parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
@@ -544,7 +536,7 @@ class Controller(object):
     @staticmethod
     def default_arguments(args):
         DEFAULT_KEYS = ['control_port', 'data_port', 'data_hwm',
-                        'devices', 'workers', 'experiment_name',
+                        'devices', 'experiment_name',
                         'log_directory', 'worker_args', 'multi']
         d = args.__dict__
         return dict((k, d[k]) for k in six.iterkeys(d) if k in DEFAULT_KEYS)

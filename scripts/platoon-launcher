@@ -76,8 +76,6 @@ supports only CUDA devices currently. NVIDIA's "NCCL" collectives library and
 "pygpu" are required for multi-GPU, while "mpi4py" is required in addition for
 multi-node.'''))
     parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
-    parser.add_argument('-nw', '--workers', nargs='+', type=int, metavar='workers/host',
-                        required=False, help='List the number of workers per controller in each host.')
     single_or_multi = parser.add_mutually_exclusive_group(required=False)
     single_or_multi.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
                                  required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
@@ -117,54 +115,38 @@ if __name__ == '__main__':
 
     # Check if we run on multi-node
     if hosts and len(hosts) > 1:
-        if args.workers:
-            if len(args.workers) > len(hosts):
-                num_of_controllers = len(hosts)
-                print("\nWARNING! Given more workers per host than number of hosts.")
-            elif len(args.workers) < len(hosts):
-                num_of_controllers = len(args.workers)
-                print("\nWARNING! Given more hosts than number of 'workers per hosts'.")
-            else:
-                num_of_controllers = len(hosts)
-        else:
-            num_of_controllers = len(hosts)
-
         print("### Starting multi-node/gpu training on: {} ...".format(hosts), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
-        with open(log_file.format("out"), 'w') as stdout_file:
-            with open(log_file.format("err"), 'w') as stderr_file:
-                env = dict(os.environ)
-                theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
-                command = ["mpiexec", "-H"]
-                command += [','.join(hosts[:num_of_controllers])]
-                command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
-                command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
-                if controller_type == "platoon":
-                    executable = ["-m", "platoon.controller"]
-                else:
-                    executable = ["{}_controller.py".format(controller_type)]
-                for i in range(num_of_controllers):
-                    command += ["python", "-u"] + executable
-                    command += [args.experiment_name, logs_folder, "--multi"]
-                    if args.workers:
-                        command += ["-nw", str(args.workers[i])]
-                    if args.controller_args:
-                        command += shlex.split(args.controller_args)
-                    if args.worker_args:
-                        command += ["-w", args.worker_args]
-                    if i != num_of_controllers - 1:
-                        command += ":"
-                try:
-                    p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
-                except OSError as exc:
-                    print("\nERROR! OS error in Popen: {}".format(exc))
-                    sys.exit(3)
-                except Exception as exc:
-                    print("\nERROR! Other in Popen: {}".format(exc))
-                    sys.exit(4)
+        env = dict(os.environ)
+        theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
+        command = ["mpiexec"]
+        command += ["--output-file", log_file.format("log")]
+        command += ["-np", str(len(hosts))]
+        command += ["-H", ','.join(hosts)]
+        command += ["--map-by", "ppr:1:node"]
+        command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
+        if controller_type == "platoon":
+            executable = ["-m", "platoon.controller"]
+        else:
+            executable = ["{}_controller.py".format(controller_type)]
+        command += ["python", "-u"] + executable
+        command += [args.experiment_name, logs_folder, "--multi"]
+        if args.controller_args:
+            command += shlex.split(args.controller_args)
+        if args.worker_args:
+            command += ["-w", args.worker_args]
+        try:
+            p = subprocess.Popen(command)
+        except OSError as exc:
+            print("\nERROR! OS error in Popen: {}".format(exc))
+            sys.exit(3)
+        except Exception as exc:
+            print("\nERROR! Other in Popen: {}".format(exc))
+            sys.exit(4)
         print("Done")
         experiment_type = "Multi-node Controllers"
     else:
+        print("### Starting single-node multi-gpu training")
         if hosts:
             import socket
             hostname = socket.gethostname()
@@ -173,32 +155,14 @@ if __name__ == '__main__':
                       "the same as the current host '{1}'.\nThis is not currently "
                       "supported.".format(hosts[0], hostname))
                 sys.exit(2)
-        num_of_controllers = 1
         controller_args = [args.experiment_name, logs_folder, '--single']
         if args.devices:
-            if args.workers:
-                if args.workers[0] > len(args.devices):
-                    print("\nWARNING! Specified more workers per host than devices. Using number of devices.")
-                    num_of_workers = len(args.devices)
-                else:
-                    num_of_workers = args.workers[0]
-            else:
-                num_of_workers = len(args.devices)
             controller_args += ['-D']
-            controller_args += args.devices[:num_of_workers]
-        else:
-            if args.workers:
-                num_of_workers = args.workers[0]
-            else:
-                num_of_workers = None
-        if num_of_workers:
-            controller_args += ["-nw", str(num_of_workers)]
+            controller_args += args.devices
         if args.controller_args:
             controller_args += shlex.split(args.controller_args)
         if args.worker_args:
             controller_args += ["-w", args.worker_args]
-
-        print("### Starting single-node multi-gpu training")
         try:
             p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
         except OSError as exc:
