@@ -1,39 +1,92 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+platoon-launcher
+
+This file serves as an executable for launching a training procedure with
+Platoon. Depending on the given arguments or configuration, the training will
+start in a single machine or multiple hosts. Execute `platoon-launcher -h` to
+see instructions or read the docs.
+
+Exit Codes
+----------
+0: Success
+1: A worker or controller has exited with non-success status
+2: False arguments
+3: Subprocess or OS errors
+4: Other error
+
+"""
 
 from __future__ import print_function
 import os
+import sys
+import subprocess
+import signal
 import time
 import shlex
 import argparse
-import subprocess
+import textwrap
+
+from platoon.util import launch_process
+from platoon import configparser
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Launcher for multi-GPU mini-framework. Ex: {} lstm gpu0 gpu3".format(os.path.basename(__file__)))
-    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_controller.py and <experiment_name>_worker.py.')
-    parser.add_argument('gpu_list', nargs='+', type=str, help='The list of Theano GPU ids (Ex: gpu0, cuda1) the script will use. 1 GPU id = 1 worker launched.')
-    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controller. (Ex: -c="--sync_rule EASGD")')
-    parser.add_argument('-w', '--workers-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=textwrap.dedent('''\
+################################################################################
+#            Launcher for Platoon multi-GPU/node training framework            #
+################################################################################
+Platoon will train your Theano models using multiple GPUs even if they do not
+reside in the same host.
+
+In order to use it, a worker file needs to be provided. A worker file defines
+the training process of a single set of model parameters in a parallel and
+distributed manner. Optionally and in case you want to extend the distributed
+computation capabilities of the training process, you are encouraged to provide
+a controller file which extends the default one (`platoon.controller` module) in
+this framework.
+
+Platoon is configured through the command-line arguments of this launcher and in
+case of their absence (or if it needed) through environmental variables or
+Platoon configuration files. Please read `platoonrc.conf` in package's root
+directory to learn about every way that Platoon can be configured.
+
+If single-node is explicitly specified through command-line arguments, the
+specified devices will be used in the GPU communicator world in the order they
+are parsed. The same thing applies also for lists of devices found in platoon
+environmentals or configuration files.
+
+e.g. usage: platoon-launcher lstm -D cuda0 cuda3 (explicit config)
+            platoon-launcher lstm  (config with envs/files - may be multi-node)
+
+If multi-node is explicitly specified through command-line arguments, extra
+configuration through appropriate environmentals per host or files needs to be
+done in order to describe which devices will be used in each host. Host names
+are given the same way they are given in MPI's `mpiexec`.
+
+e.g. usage: platoon-launcher lstm -nw 2 2 -H lisa0 lisa1
+            (2 gpus on lisa0 and 2 gpus on lisa1)
+
+NOTIFICATION: This launcher is used to set up the new worker interface (the old
+is still usable - but not in multi-node configs). The new worker interface
+supports only CUDA devices currently. NVIDIA's "NCCL" collectives library and
+"pygpu" are required for multi-GPU, while "mpi4py" is required in addition for
+multi-node.'''))
+    parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
+    parser.add_argument('-nw', '--workers', nargs='+', type=int, metavar='workers/host',
+                        required=False, help='List the number of workers per controller in each host.')
+    single_or_multi = parser.add_mutually_exclusive_group(required=False)
+    single_or_multi.add_argument('-D', '--devices', nargs='+', type=str, metavar='devname',
+                                 required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
+    single_or_multi.add_argument('-H', '--hosts', nargs='+', type=str, metavar='hostname',
+                                 required=False, help='List of host names to participate in multi-node training. Each host will be assigned to a separate controller. If this option is specified, experiment will be run in multiple nodes.')
+    parser.add_argument('-c', '--controller-args', required=False, help='The arguments that will be passed to your controllers. (Ex: -c="--sync_rule EASGD")')
+    parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')
 
     return parser.parse_args()
-
-
-def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
-    print("Starting {0} on {1} ...".format(process_type, device), end=' ')
-
-    log_file = os.path.join(logs_folder, "{0}{1}.{{}}".format(process_type, device))
-    with open(log_file.format("out"), 'w') as stdout_file:
-        with open(log_file.format("err"), 'w') as stderr_file:
-            env = dict(os.environ)
-            env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
-            command = ["python",  "-u",  "{0}_{1}.py".format(experiment_name, process_type)]
-            if not args is None:
-                command += args
-            process = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file, env=env)
-
-    print("Done")
-    return process
 
 if __name__ == '__main__':
     args = parse_arguments()
@@ -42,36 +95,148 @@ if __name__ == '__main__':
     os.makedirs(logs_folder)
 
     print("### Launching experiment: {}".format(args.experiment_name))
-    process_map = {}
 
-    p = launch_process(logs_folder, args.experiment_name, shlex.split(args.controller_args or ''), "cpu", "controller")
-    process_map[p.pid] = ('Controller', p)
+    # check for worker executable, else fail
+    if not os.path.isfile("./{}_worker.py".format(args.experiment_name)):
+        print("\nERROR! Cannot find worker executable: {}_worker.py".format(args.experiment_name))
+        sys.exit(2)
+    # check for custom controller executable, else use default
+    if os.path.isfile("./{}_controller.py".format(args.experiment_name)):
+        controller_type = args.experiment_name
+    else:
+        controller_type = "platoon"
 
-    for device in args.gpu_list:
-        worker_process = launch_process(logs_folder, args.experiment_name, shlex.split(args.workers_args or ''), device)
-        process_map[worker_process.pid] = ("Worker{}".format(device),
-                                           worker_process)
+    # If not specified in launcher, check for other configuration types
+    if args.hosts is None:
+        try:
+            hosts = configparser.fetch_hosts()
+        except KeyError:
+            hosts = None
+    else:
+        hosts = args.hosts
+
+    # Check if we run on multi-node
+    if hosts and len(hosts) > 1:
+        if args.workers:
+            if len(args.workers) > len(hosts):
+                num_of_controllers = len(hosts)
+                print("\nWARNING! Given more workers per host than number of hosts.")
+            elif len(args.workers) < len(hosts):
+                num_of_controllers = len(args.workers)
+                print("\nWARNING! Given more hosts than number of 'workers per hosts'.")
+            else:
+                num_of_controllers = len(hosts)
+        else:
+            num_of_controllers = len(hosts)
+
+        print("### Starting multi-node/gpu training on: {} ...".format(args.hosts), end=' ')
+        log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
+        with open(log_file.format("out"), 'w') as stdout_file:
+            with open(log_file.format("err"), 'w') as stderr_file:
+                env = dict(os.environ)
+                theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
+                command = ["mpiexec", "-H"]
+                command += [','.join(args.hosts[:num_of_controllers])]
+                command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
+                command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
+                if controller_type == "platoon":
+                    executable = ["-m", "platoon.controller"]
+                else:
+                    executable = ["{}_controller.py".format(controller_type)]
+                for i in range(num_of_controllers):
+                    command += ["python", "-u"] + executable
+                    command += [args.experiment_name, logs_folder, "--multi"]
+                    if args.workers:
+                        command += ["-nw", str(args.workers[i])]
+                    if args.controller_args:
+                        command += shlex.split(args.controller_args)
+                    if args.worker_args:
+                        command += ["-w", args.worker_args]
+                    if i != len(num_of_workers) - 1:
+                        command += ":"
+                try:
+                    p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
+                except OSError as exc:
+                    print("\nERROR! OS error in Popen: {}".format(exc))
+                    sys.exit(3)
+                except Exception as exc:
+                    print("\nERROR! Other in Popen: {}".format(exc))
+                    sys.exit(4)
+        print("Done")
+        experiment_type = "Multi-node Controllers"
+    else:
+        if hosts:
+            import socket
+            hostname = socket.gethostname()
+            if hosts[0] != hostname:
+                print("\nERROR! A single host '{0}' was specified which is not "
+                      "the same as the current host '{1}'.\nThis is not currently "
+                      "supported.".format(hosts[0], hostname))
+                sys.exit(2)
+        num_of_controllers = 1
+        controller_args = [args.experiment_name, logs_folder, '--single']
+        if args.devices:
+            if args.workers:
+                if args.workers[0] > len(args.devices):
+                    print("\nWARNING! Specified more workers per host than devices. Using number of devices.")
+                    num_of_workers = len(args.devices)
+                else:
+                    num_of_workers = args.workers[0]
+            else:
+                num_of_workers = len(args.devices)
+            controller_args += ['-D']
+            controller_args += args.devices[:num_of_workers]
+        else:
+            if args.workers:
+                num_of_workers = args.workers[0]
+            else:
+                num_of_workers = None
+        if num_of_workers:
+            controller_args += ["-nw", str(num_of_workers)]
+        if args.controller_args:
+            controller_args += shlex.split(args.controller_args)
+        if args.worker_args:
+            controller_args += ["-w", args.worker_args]
+
+        print("### Starting single-node multi-gpu training")
+        try:
+            p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
+        except OSError as exc:
+            print("\nERROR! OS error in Popen: {}".format(exc))
+            sys.exit(3)
+        except Exception as exc:
+            print("\nERROR! Other while launching process: {}".format(exc))
+            sys.exit(4)
+        experiment_type = "Single-node Controller"
 
     print("\n### Logs folder ###\n{}".format(logs_folder))
-
     print("\n### Waiting on experiment to finish ...")
-
-    # Silly error handling but that will do for now.
-    while process_map:
-        pid, returncode = os.wait()
-        if pid not in process_map:
-            print("Recieved status for unknown process {}".format(pid))
-
-        name, p = process_map[pid]
-        del process_map[pid]
-        print("{} terminated with return code: {}.".format(name, returncode))
-        if returncode != 0:
-            print("\nWARNING! An error has occurred.\nCleaning up and closing, see logs folder.")
-            while process_map:
-                for name, p in list(process_map.values()):
-                    try:
-                        p.kill()
-                    except OSError:
-                        pass
-                    if p.poll() is not None:
-                        del process_map[p.pid]
+    try:
+        try:
+            pid, status = os.waitpid(p.pid, 0)
+        except OSError as exc:
+            print("\nERROR! OS error: {}".format(exc))
+            sys.exit(3)
+        if pid != p.pid:
+            print("\nWARNING! Received status for unknown process {}".format(pid))
+            sys.exit(3)
+        if os.WIFEXITED(status):
+            rcode = os.WEXITSTATUS(status)
+            print("## {0} terminated with return code: {1}.".format(experiment_type, rcode))
+            if rcode != 0:
+                print("\nERROR! An error has occured.\nSee logs for more info.")
+                sys.exit(1)
+            else:
+                print("\nSUCCESS! Training with platoon has finished.")
+        else:
+            print("\nWARNING! {} changed status but has not exited.".format(experiment_type))
+            raise RuntimeError("ERROR! Unexpected controller status change.")
+    except (RuntimeError, KeyboardInterrupt) as exc:
+        print(exc)
+        print("Killing controller processes...")
+        try:
+            os.kill(pid, signal.SIGTERM)
+            pid, status = os.waitpid(p.pid, 0)
+        except OSError as exc:
+            print("\nERROR! OS error: {}".format(exc))
+        sys.exit(3)
