@@ -129,14 +129,14 @@ if __name__ == '__main__':
         else:
             num_of_controllers = len(hosts)
 
-        print("### Starting multi-node/gpu training on: {} ...".format(args.hosts), end=' ')
+        print("### Starting multi-node/gpu training on: {} ...".format(hosts), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
         with open(log_file.format("out"), 'w') as stdout_file:
             with open(log_file.format("err"), 'w') as stderr_file:
                 env = dict(os.environ)
                 theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
                 command = ["mpiexec", "-H"]
-                command += [','.join(args.hosts[:num_of_controllers])]
+                command += [','.join(hosts[:num_of_controllers])]
                 command += ["-n", str(num_of_controllers), "--map-by", "ppr:1:node"]
                 command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
                 if controller_type == "platoon":
@@ -152,7 +152,7 @@ if __name__ == '__main__':
                         command += shlex.split(args.controller_args)
                     if args.worker_args:
                         command += ["-w", args.worker_args]
-                    if i != len(num_of_workers) - 1:
+                    if i != num_of_controllers - 1:
                         command += ":"
                 try:
                     p = subprocess.Popen(command, bufsize=0, stdout=stdout_file, stderr=stderr_file)
