@@ -6,9 +6,14 @@ from timeit import default_timer as timer
 
 from six.moves import range
 
-from platoon.worker import Worker
 import theano
 import numpy as np
+from numpy.testing import assert_allclose
+
+from platoon.worker import Worker
+
+SEED = 567
+np.random.seed(SEED)
 
 worker = Worker(control_port=5567)
 
@@ -33,12 +38,14 @@ def profile(shape=(1000, 1000), dtype='float64', rng=(-1, 1)):
                     filename="worker.prof")
     s = pstats.Stats("worker.prof")
     s.strip_dirs().sort_stats("time").print_stats()
+    assert_allclose(inp * worker.global_size, sout.get_value())
 
     print("## Second call to worker.all_reduce")
     cProfile.runctx("worker.all_reduce(sinp, '+', sout)", globals(), locals(),
                     filename="worker.prof")
     s = pstats.Stats("worker.prof")
     s.strip_dirs().sort_stats("time").print_stats()
+    assert_allclose(inp * worker.global_size, sout.get_value())
     if worker._multinode:
         print("## Note that there must be difference between the first and")
         print("## the second call as a result of the extra call to worker.shared")
@@ -79,6 +86,7 @@ def benchmark(shape=(1000, 1000), dtype='float64', rng=(-1, 1), number=10):
     worker.all_reduce(sinp, '+', sout)
     end = timer()
     print("Time:", end - start)
+    assert_allclose(inp * worker.global_size, sout.get_value())
 
     print("# Timing worker.all_reduce w/o calls to worker.shared")
     ttime = 0
@@ -87,6 +95,7 @@ def benchmark(shape=(1000, 1000), dtype='float64', rng=(-1, 1), number=10):
         worker.all_reduce(sinp, '+', sout)
         end = timer()
         ttime += end - start
+        assert_allclose(inp * worker.global_size, sout.get_value())
     print("Mean time:", ttime / number)
 
 

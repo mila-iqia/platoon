@@ -14,4 +14,4 @@ code, and `PLATOON_LOGS` of the late procedure in current directory.
 
 To profile and benchmark the new worker interface, you need to run
 `platoon2-launcher time` in current directory. Results are written in
-PLATOON_LOGS.
+`PLATOON_LOGS`.

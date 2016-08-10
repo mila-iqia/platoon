@@ -1,9 +1,10 @@
+from __future__ import absolute_import
 import unittest
 from six.moves import reload_module as reload
 
 import numpy as np
 
-from platoon import util
+from ... import util
 
 try:
     from mpi4py import MPI

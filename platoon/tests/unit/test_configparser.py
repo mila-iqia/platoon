@@ -1,8 +1,9 @@
+from __future__ import absolute_import
 import os
 import unittest
 from six.moves import reload_module as reload
 
-from platoon import configparser as cfgp
+from ... import configparser as cfgp
 
 
 def test_fetch_hosts_from_envs():
