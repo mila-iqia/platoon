@@ -531,7 +531,7 @@ class Controller(object):
         single_or_multi.add_argument('--multi', action='store_true',
                                      help='Indicates that this Controller participates in a multi-node platoon. Requires mpi4py')
         parser.add_argument('-D', '--devices', default=list(), nargs='+', type=str, metavar='devname',
-                            required=False, help='List of Theano device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
+                            required=False, help='List of device names (e.g. gpu0 or cuda1). Each device will be assigned to a separate worker. If this option is specified, experiment will be run in a single node.')
         parser.add_argument('-nw', '--workers', type=int, metavar='num_of_workers',
                             required=False, help='Number of workers spawned by this controller for this host.')
         parser.add_argument('-w', '--worker-args', required=False, help='The arguments that will be passed to your workers. (Ex: -w="learning_rate=0.1")')

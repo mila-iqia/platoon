@@ -11,5 +11,5 @@ setup(
     license='MIT',
     description='Experimental multi-GPU mini-framework for Theano',
     long_description=open('README.md').read(),
-    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six', 'theano']
+    install_requires=['numpy', 'cffi', 'pyzmq', 'posix_ipc', 'six']
 )

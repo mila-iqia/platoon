@@ -2,11 +2,10 @@ import os
 import shlex
 import sys
 
-#  from theano.compat import configparser as ConfigParser
 from six.moves import configparser as ConfigParser
 
 # The PLATOON_DEVICES environment variable should be a list of comma-separated
-# theano device entries, e.g. PLATOON_DEVICES=cuda0,cuda2,cuda3
+# device name entries, e.g. PLATOON_DEVICES=cuda0,cuda2,cuda3
 PLATOON_DEVICES = os.getenv("PLATOON_DEVICES", "")
 
 # The PLATOON_HOSTS environment variable should be a list of comma-separated
