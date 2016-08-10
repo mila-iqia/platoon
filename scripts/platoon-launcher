@@ -235,7 +235,7 @@ if __name__ == '__main__':
         print(exc)
         print("Killing controller processes...")
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(p.pid, signal.SIGTERM)
             pid, status = os.waitpid(p.pid, 0)
         except OSError as exc:
             print("\nERROR! OS error: {}".format(exc))
