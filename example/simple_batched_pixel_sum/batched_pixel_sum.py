@@ -1,6 +1,6 @@
 from __future__ import print_function
 import gzip
-import cPickle
+from six.moves import cPickle
 import numpy as np
 from numpy.testing import assert_allclose
 import theano

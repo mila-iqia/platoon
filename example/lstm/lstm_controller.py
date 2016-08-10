@@ -1,9 +1,11 @@
-from __future__ import absolute_import, print_function
+from __future__ import print_function
 import os
 import sys
 import time
 
 import numpy
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from platoon.channel import Controller
 
 
@@ -82,14 +84,14 @@ class LSTMController(Controller):
                     control_response = 'train'
             else:
                 control_response = 'stop'
-        elif 'done' in req:
-            self.uidx += req['done']
+        elif req == 'done':
+            self.uidx += req_info['train_len']
 
             if numpy.mod(self.uidx, self.valid_freq) == 0:
                 self.valid = True
-        elif 'valid_err' in req:
-            valid_err = req['valid_err']
-            test_err = req['test_err']
+        elif req == 'pred_errors':
+            valid_err = req_info['valid_err']
+            test_err = req_info['test_err']
             self.history_errs.append([valid_err, test_err])
             harr = numpy.array(self.history_errs)[:, 0]
 

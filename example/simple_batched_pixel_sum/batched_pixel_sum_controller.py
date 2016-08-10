@@ -7,6 +7,7 @@ import six
 from six.moves import cPickle
 from multiprocessing import Process
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from platoon.channel import Controller
 
 
@@ -64,8 +65,8 @@ class BatchedPixelSumController(Controller):
                 control_response = 'stop'
         elif req == 'get_data_shape':
             control_response = self._dataset[0].shape
-        elif 'done' in req:
-            self._nb_batch_processed += req['done']
+        elif req == 'done':
+            self._nb_batch_processed += req_info['num_batches']
             print("{} batches processed by worker so far."
                   .format(self._nb_batch_processed))
 
@@ -90,13 +91,13 @@ def parse_arguments():
 
 def get_mnist(path):
     import os
-    import urllib
+    from six.moves import urllib
 
     if not os.path.exists(path):
         print("Downloading mnist ...", end=' ')
         url = "http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz"
 
-        urllib.urlretrieve(url, path)
+        urllib.request.urlretrieve(url, path)
         print("Done")
 
 

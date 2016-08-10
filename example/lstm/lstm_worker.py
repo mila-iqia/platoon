@@ -6,6 +6,10 @@ from collections import OrderedDict
 import sys
 import argparse
 
+import six
+from six import iteritems
+from six.moves import range
+
 import numpy
 import theano
 from theano import config
@@ -64,7 +68,7 @@ def zipp(params, tparams):
     """
     When we reload the model. Needed for the GPU stuff.
     """
-    for kk, vv in params.iteritems():
+    for kk, vv in iteritems(params):
         tparams[kk].set_value(vv)
 
 
@@ -73,7 +77,7 @@ def unzip(zipped):
     When we pickle the model. Needed for the GPU stuff.
     """
     new_params = OrderedDict()
-    for kk, vv in zipped.iteritems():
+    for kk, vv in iteritems(zipped):
         new_params[kk] = vv.get_value()
     return new_params
 
@@ -114,7 +118,7 @@ def init_params(options):
 
 def load_params(path, params):
     pp = numpy.load(path)
-    for kk, vv in params.iteritems():
+    for kk, vv in iteritems(params):
         if kk not in pp:
             raise Warning('%s is not in the archive' % kk)
         params[kk] = pp[kk]
@@ -124,7 +128,7 @@ def load_params(path, params):
 
 def init_tparams(params):
     tparams = OrderedDict()
-    for kk, pp in params.iteritems():
+    for kk, pp in iteritems(params):
         tparams[kk] = theano.shared(params[kk], name=kk)
     return tparams
 
@@ -225,7 +229,7 @@ def sgd(lr, tparams, grads, x, mask, y, cost):
     # New set of shared variable that will contain the gradient
     # for a mini-batch.
     gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % k)
-               for k, p in tparams.iteritems()]
+               for k, p in iteritems(tparams)]
     gsup = [(gs, g) for gs, g in zip(gshared, grads)]
 
     # Function that computes gradients for a mini-batch, but do not
@@ -274,13 +278,13 @@ def adadelta(lr, tparams, grads, x, mask, y, cost):
 
     zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                   name='%s_grad' % k)
-                    for k, p in tparams.iteritems()]
+                    for k, p in iteritems(tparams)]
     running_up2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                  name='%s_rup2' % k)
-                   for k, p in tparams.iteritems()]
+                   for k, p in iteritems(tparams)]
     running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                     name='%s_rgrad2' % k)
-                      for k, p in tparams.iteritems()]
+                      for k, p in iteritems(tparams)]
 
     zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2))
@@ -337,13 +341,13 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
 
     zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                   name='%s_grad' % k)
-                    for k, p in tparams.iteritems()]
+                    for k, p in iteritems(tparams)]
     running_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                    name='%s_rgrad' % k)
-                     for k, p in tparams.iteritems()]
+                     for k, p in iteritems(tparams)]
     running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                     name='%s_rgrad2' % k)
-                      for k, p in tparams.iteritems()]
+                      for k, p in iteritems(tparams)]
 
     zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
     rgup = [(rg, 0.95 * rg + 0.05 * g) for rg, g in zip(running_grads, grads)]
@@ -356,7 +360,7 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
 
     updir = [theano.shared(p.get_value() * numpy_floatX(0.),
                            name='%s_updir' % k)
-             for k, p in tparams.iteritems()]
+             for k, p in iteritems(tparams)]
     updir_new = [(ud, 0.9 * ud - 1e-4 * zg / tensor.sqrt(rg2 - rg ** 2 + 1e-4))
                  for ud, zg, rg, rg2 in zip(updir, zipped_grads, running_grads,
                                             running_grads2)]
@@ -514,7 +518,8 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    worker.init_shared_params(tparams.values(), param_sync_rule=EASGD(0.5))
+    list_tparams = list(tparams.values())
+    worker.init_shared_params(list_tparams, param_sync_rule=EASGD(0.5))
     print("Params init done")
 
     # use_noise is for dropout
@@ -530,7 +535,7 @@ def train_lstm(
 
     f_cost = theano.function([x, mask, y], cost, name='f_cost')
 
-    grads = tensor.grad(cost, wrt=tparams.values())
+    grads = tensor.grad(cost, wrt=list_tparams)
     f_grad = theano.function([x, mask, y], grads, name='f_grad')
 
     lr = tensor.scalar(name='lr')
@@ -564,12 +569,12 @@ def train_lstm(
 
         if step == 'train':
             use_noise.set_value(numpy_floatX(1.))
-            for i in xrange(train_len):
+            for i in range(train_len):
                 x, mask, y = next(train_it)
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
             print('Train cost:', cost)
-            step = worker.send_req(dict(done=train_len))
+            step = worker.send_req('done', {'train_len': train_len})
 
             print("Syncing with global params")
             worker.sync_params(synchronous=True)
@@ -591,8 +596,8 @@ def train_lstm(
             valid_err = pred_error(f_pred, prepare_data, valid,
                                    kf_valid)
             test_err = pred_error(f_pred, prepare_data, test, kf_test)
-            res = worker.send_req(dict(test_err=float(test_err),
-                                       valid_err=float(valid_err)))
+            res = worker.send_req('pred_errors', dict(test_err=float(test_err),
+                                  valid_err=float(valid_err)))
 
             if res == 'best':
                 best_p = unzip(tparams)
@@ -605,7 +610,7 @@ def train_lstm(
         if step == 'stop':
             break
 
-    # Release all shared ressources.
+    # Release all shared resources.
     worker.close()
 
     # FIX that shit later.

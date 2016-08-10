@@ -89,6 +89,10 @@ class Worker(object):
         self._shmrefs = dict()
         self.shared_arrays = dict()
 
+################################################################################
+#                           Basic Control Interface                            #
+################################################################################
+
     def send_req(self, req, info=None):
         """
         Send a control request.
@@ -114,6 +118,59 @@ class Worker(object):
             return self.csocket.recv_json()
         else:
             raise PlatoonError("Control Socket: recv timeout")
+
+    def lock(self, timeout=None):
+        """
+        Acquire the lock across all workers.
+
+        This is advisory and does not prevent concurrent access.
+        Subtracts 1 in underlying semaphore. Blocks at 0. Begins at 1.
+
+        Parameters
+        ----------
+        timeout : int
+            Amount of time to wait for the lock to be available.  A
+            timeout of 0 will raise an error immediately if the lock is
+            not available.
+
+        .. versionchanged:: 0.6.0
+            This method used to be called `lock_params`.
+
+        """
+        self._lock.acquire(timeout)
+
+    def unlock(self):
+        """
+        Release the lock across all workers.
+
+        The current implementation does not ensure that the process
+        that locked the params is the one that unlocks them. It also
+        does not prevent one process from unlocking more than once
+        (which will allow more than one process to hold the lock). Adds 1 in
+        underlying semaphore.
+
+        Make sure you follow proper lock/unlock logic in your program
+        to avoid these problems.
+
+        .. versionchanged:: 0.6.0
+            This method used to be called `unlock_params`.
+
+        """
+        self._lock.release()
+
+    @property
+    def local_size(self):
+        "Number of workers assigned to local host's controller"
+        return self._local_size
+
+    @property
+    def global_size(self):
+        "Number of workers spawned across all hosts in total"
+        return self._global_size
+
+################################################################################
+#                   Initialization and Finilization Methods                    #
+################################################################################
 
     def _handle_force_close(self, signum, frame):
         """Handle SIGINT signals from Controller.
@@ -208,50 +265,8 @@ class Worker(object):
         self.cpoller = zmq.Poller()
         self.cpoller.register(self.csocket, zmq.POLLIN)
 
-    def lock(self, timeout=None):
-        """
-        Acquire the lock across all workers.
-
-        This is advisory and does not prevent concurrent access.
-        Subtracts 1 in underlying semaphore. Blocks at 0. Begins at 1.
-
-        Parameters
-        ----------
-        timeout : int
-            Amount of time to wait for the lock to be available.  A
-            timeout of 0 will raise an error immediately if the lock is
-            not available.
-
-        """
-        self._lock.acquire(timeout)
-
-    def unlock(self):
-        """
-        Release the lock across all workers.
-
-        The current implementation does not ensure that the process
-        that locked the params is the one that unlocks them. It also
-        does not prevent one process from unlocking more than once
-        (which will allow more than one process to hold the lock). Adds 1 in
-        underlying semaphore.
-
-        Make sure you follow proper lock/unlock logic in your program
-        to avoid these problems.
-        """
-        self._lock.release()
-
-    @property
-    def local_size(self):
-        "Number of workers assigned to local host's controller"
-        return self._local_size
-
-    @property
-    def global_size(self):
-        "Number of workers spawned across all hosts in total"
-        return self._global_size
-
 ################################################################################
-#                            New Control Interface                             #
+#                            Collectives Interface                             #
 ################################################################################
 
     def shared(self, array):
@@ -398,7 +413,7 @@ class Worker(object):
             return res
 
 ################################################################################
-#                      Old Control Interface (param sync)                      #
+#                             Param Sync Interface                             #
 ################################################################################
 
     def _get_descr_size(self, dtype, shape):
@@ -412,8 +427,7 @@ class Worker(object):
         Initialize shared memory parameters.
 
         This must be called before accessing the params attribute
-        and/or calling :meth:`sync_params`, :meth:`lock` or
-        :meth:`unlock`.
+        and/or calling :meth:`sync_params`.
 
         Parameters
         ----------
@@ -421,11 +435,6 @@ class Worker(object):
             Theano shared variables representing the weights of your model.
         param_sync_rule : ParamSyncRule
             Update rule for the parameters
-        cleanup : bool
-            Whether to cleanup a previous run with the same
-            identifier.  Will also copy the current values of `params`
-            to the shared memory.  This is required on certain
-            platform due to system restrictions.
 
         """
 

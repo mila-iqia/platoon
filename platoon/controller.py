@@ -66,7 +66,7 @@ class Controller(object):
 
         self._devices = list()
         if devices is not None:
-            self._devices = get_workers_devices(not multi, devices, workers)
+            self._devices = Controller.get_workers_devices(not multi, devices, workers)
         self._local_size = len(self._devices)
         self._global_size = self._local_size
         self._get_platoon_info_count = [0]
@@ -208,6 +208,7 @@ class Controller(object):
 
         """
         try:  # spin spin spin
+            self._success = 2
             while self._workers:  # spin while we have still children to watch for
                 try:
                     pid, status = os.waitpid(-1, os.WNOHANG)
@@ -299,7 +300,7 @@ class Controller(object):
         while self._workers:
             pid = self._workers.pop()
             print("Killing worker {}...".format(pid), file=sys.stderr)
-            while True:
+            for _ in range(3):
                 try:
                     os.kill(pid, signal.SIGINT)
                     break
@@ -350,6 +351,7 @@ class Controller(object):
 
         This will work only if every single worker participates successfully each
         time in a concurrent request of the same type to their controller.
+
         """
         if self._local_size == 1:
             return True
@@ -465,6 +467,10 @@ class Controller(object):
             self.asocket.send(array, zmq.SNDMORE)
         self.asocket.send(arrays[-1])
 
+################################################################################
+#                               Helper functions                               #
+################################################################################
+
     @staticmethod
     def get_workers_devices(single, devices, workers):
         # Get Controller's devices
@@ -485,6 +491,7 @@ class Controller(object):
                     print("WARNING! Using all compatible GPUs in host.", file=sys.stderr)
                     from pygpu import gpuarray as ga
                     devcount = ga.count_devices("cuda", 0)
+                    print("WARNING! Found {} GPUs!".format(devcount), file=sys.stderr)
                     devices_found = ["cuda" + str(i) for i in range(devcount)]
                 except ImportError:
                     print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
@@ -494,15 +501,19 @@ class Controller(object):
                     print("ERROR! Could not fetch devices for Controller.", file=sys.stderr)
                     sys.exit(2)
 
+        if not devices_found:
+            print("ERROR! Cound not find any compatible GPUs in host.", file=sys.stderr)
+            sys.exit(4)
+
         if workers:
-            if workers > len(devices):
+            if workers > len(devices_found):
                 print("WARNING! Given {0} workers but {1} given devices. Using {1} workers.".format(workers, len(devices)),
                       file=sys.stderr)
-                workers_found = len(devices)
+                workers_found = len(devices_found)
             else:
                 workers_found = workers
         else:
-            workers_found = len(devices)
+            workers_found = len(devices_found)
 
         final_devices = devices_found[:workers_found]
         print("## On " + hostname + " using: " + " ".join(final_devices))
