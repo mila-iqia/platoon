@@ -18,7 +18,7 @@ try:
 except ImportError:
     pygpu = None
 
-from .util import (mmap, PlatoonError, PlatoonWarning)
+from .util import (mmap, PlatoonError, PlatoonWarning, SingletonType)
 
 
 # You need:
@@ -33,6 +33,7 @@ else:
     buffer_ = buffer  # noqa
 
 
+@six.add_metaclass(SingletonType)
 class Worker(object):
     """
     Worker object. Each worker should have one instance of this class.

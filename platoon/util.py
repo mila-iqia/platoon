@@ -1,5 +1,6 @@
 from __future__ import print_function
 import os
+import sys
 import subprocess
 import cffi
 
@@ -124,3 +125,21 @@ def dtype_to_mpi(dtype):
     if res is not None:
         return res
     raise TypeError("Conversion from dtype {} is not known".format(dtype))
+
+
+class SingletonType(type):
+    def __init__(cls, name, bases, dict):
+        super(SingletonType, cls).__init__(name, bases, dict)
+        cls.instance = None
+
+    def __call__(cls, *args, **kwds):
+        if cls.instance is None:
+            cls.args = args
+            cls.kwds = kwds
+            cls.instance = super(SingletonType, cls).__call__(*args, **kwds)
+        else:
+            if args or kwds:
+                print(PlatoonWarning("Worker instance has already been initialized."
+                                     "\nArgs: {0}, Kwds: {1}".format(args, kwds)),
+                      file=sys.stderr)
+        return cls.instance
