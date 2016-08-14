@@ -19,8 +19,8 @@ try:
 except ImportError:
     MPI = None
 
-from .util import (PlatoonError, mmap, launch_process,
-                   op_to_mpi, dtype_to_mpi)
+from ..util import (PlatoonError, mmap, launch_process,
+                    op_to_mpi, dtype_to_mpi)
 
 
 class Controller(object):

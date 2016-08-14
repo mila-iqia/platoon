@@ -65,7 +65,7 @@ def launch_process(logs_folder, experiment_name, args, device, process_type="wor
             env = dict(os.environ)
             env['THEANO_FLAGS'] = '{},device={}'.format(env.get('THEANO_FLAGS', ''), device)
             if experiment_name == "platoon" and process_type == "controller":
-                executable = ["-m", "platoon.controller"]
+                executable = ["-m", "platoon.channel.controller"]
             else:
                 executable = ["{0}_{1}.py".format(experiment_name, process_type)]
             command = ["python", "-u"] + executable

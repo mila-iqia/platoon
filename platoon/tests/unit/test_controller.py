@@ -2,7 +2,7 @@ from __future__ import absolute_import
 import six
 import unittest
 
-from ... import controller
+from ...channel import controller
 
 if six.PY3:
     buffer_ = memoryview

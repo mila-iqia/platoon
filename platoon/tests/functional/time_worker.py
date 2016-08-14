@@ -12,7 +12,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from platoon.worker import Worker
+from platoon import Worker
 
 SEED = 567
 np.random.seed(SEED)

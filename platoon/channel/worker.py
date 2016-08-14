@@ -18,7 +18,7 @@ try:
 except ImportError:
     pygpu = None
 
-from .util import (mmap, PlatoonError, PlatoonWarning, SingletonType)
+from ..util import (mmap, PlatoonError, PlatoonWarning, SingletonType)
 
 
 # You need:

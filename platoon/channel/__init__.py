@@ -1,5 +1,4 @@
 """
-File: channel.py
 Description: This file serves as a backwards compatibility layer for Platoon v0.5.0
 """
 

@@ -126,7 +126,7 @@ if __name__ == '__main__':
         command += ["--map-by", "ppr:1:node"]
         command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
         if controller_type == "platoon":
-            executable = ["-m", "platoon.controller"]
+            executable = ["-m", "platoon.channel.controller"]
         else:
             executable = ["{}_controller.py".format(controller_type)]
         command += ["python", "-u"] + executable

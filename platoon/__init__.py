@@ -1,4 +1,4 @@
-from .controller import Controller
-from .worker import Worker
+from .channel.controller import Controller
+from .channel.worker import Worker
 
 from .training import param_sync
