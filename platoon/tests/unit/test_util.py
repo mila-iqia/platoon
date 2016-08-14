@@ -23,6 +23,7 @@ class TestOpToMPI(unittest.TestCase):
         assert util.op_to_mpi('*') == MPI.PROD
         assert util.op_to_mpi("prod") == MPI.PROD
         assert util.op_to_mpi("product") == MPI.PROD
+        assert util.op_to_mpi("mul") == MPI.PROD
         assert util.op_to_mpi("max") == MPI.MAX
         assert util.op_to_mpi("maximum") == MPI.MAX
         assert util.op_to_mpi("min") == MPI.MIN

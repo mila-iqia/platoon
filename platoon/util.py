@@ -84,6 +84,7 @@ if MPI:
         '*': MPI.PROD,
         "prod": MPI.PROD,
         "product": MPI.PROD,
+        "mul": MPI.PROD,
         "max": MPI.MAX,
         "maximum": MPI.MAX,
         "min": MPI.MIN,
