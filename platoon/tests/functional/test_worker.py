@@ -21,6 +21,12 @@ class TestWorker(unittest.TestCase):
             print(exc, file=sys.stderr)
             raise exc
 
+    def test_is_singleton(self):
+        inst = Worker()
+        assert inst is self.worker
+        inst = Worker(123413)
+        assert inst is self.worker
+
     def test_global_size(self):
         assert self.worker.global_size == self.total_nw
 
