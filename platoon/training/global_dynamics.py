@@ -1,6 +1,5 @@
-from __future__ import absolute_import, print_function, division
+from __future__ import absolute_import, division
 
-from ...util import PlatoonError
 from ...worker import Worker
 from ...ops import AllReduceSum
 
@@ -59,6 +58,8 @@ class GlobalDynamics(object):
 
     @property.setter
     def fn(self, inst):
+        if not hasattr(inst, '__call__'):
+            raise TypeError("Supplied object is not a callable.")
         self._fn = inst
 
     def make_rule(self, *args):
@@ -101,13 +102,23 @@ class SGD(_GlobalDynamicsNoSet):
         super(SGD, self).__init__(worker)
 
     def make_rule(self, local_updates):
-        """Makes global SGD rule for the parameters in `args`.
+        """Makes global synchronous SGD rule for the parameters in `local_updates`.
 
         Parameters
         ----------
         local_updates: {theano.SharedVariable, list of theano.SharedVariable}
             These variables represent the updates found
             by local optimization dynamics on the model's parameters.
+
+        .. note::
+            For better performance, try to batch together in the same theano.SharedVariable
+            as many model parameter arrays as possible. This reduces the number of calls
+            and utilizes inlying algorithms the most. One way to do this is to create
+            one c contiguous array that contains every set (matrix) of model parameters
+            along the first dimension. Then in order to use each set separately,
+            create as many view arrays as the number of sets of model parameters,
+            i.e. the length of the first dimension. Use the whole array as an input
+            to the GlobalDynamics.make_rule function!
 
         """
         import theano
