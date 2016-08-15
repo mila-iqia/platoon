@@ -11,9 +11,7 @@ except ImportError as exc:
     print("ERROR! On {}:".format(__name__), exc, file=sys.stderr)
     theano = None
 
-
 from .channel.worker import Worker
-from .util import PlatoonError
 
 
 if theano:
@@ -30,7 +28,7 @@ if theano:
                 try:
                     self.worker = Worker()  # Get singleton instance
                 except TypeError:
-                    raise PlatoonError("A worker instance has not been created yet.")
+                    raise AttributeError("Worker instance has not been created yet.")
             # This is because I have not found a way to use half-types through MPI
             self._f16_ok = not self.worker._multinode
             self.scalar_op = scalar_op
