@@ -18,7 +18,7 @@ if theano:
     class AllReduce(theano.Op):
         __props__ = ("scalar_op", )
 
-        def __init__(self, scalar_op, worker=None):
+        def __init__(self, scalar_op, inplace=False, worker=None):
             if worker is not None:
                 if isinstance(worker, Worker):
                     self.worker = worker
@@ -32,9 +32,10 @@ if theano:
             # This is because I have not found a way to use half-types through MPI
             self._f16_ok = not self.worker._multinode
             self.scalar_op = scalar_op
+            self.inplace = inplace
 
         def __str__(self):
-            if self.inplace_pattern:
+            if self.inplace:
                 return "AllReduce{%s,inplace}<gpuarray.collectives>" % (str(self.scalar_op).capitalize())
             else:
                 return "AllReduce{%s,no_inplace}<gpuarray.collectives>" % (str(self.scalar_op).capitalize())
@@ -42,9 +43,13 @@ if theano:
         def make_node(self, src, dest=None):
             if dest is None:
                 inputs = [src]
-                self.inplace_pattern = {}
+                if self.inplace:
+                    self.inplace_pattern = {0: 0}
+                else:
+                    self.inplace_pattern = {}
             else:
                 inputs = [src, dest]
+                self.inplace = True
                 self.inplace_pattern = {0: 1}
             self.destroy_map = dict((o, [i]) for o, i in self.inplace_pattern.items())
             inputs = [as_gpuarray_variable(i, self.worker.ctx_name) for i in inputs]
@@ -65,23 +70,26 @@ if theano:
                 dest = inputs[1]
                 self.worker.all_reduce(src, str(self.scalar_op), dest)
                 out[0] = dest
+            elif self.inplace:
+                self.worker.all_reduce(src, str(self.scalar_op), src)
+                out[0] = src
             else:
                 out[0] = self.worker.all_reduce(src, str(self.scalar_op))
 
         def grad(self, inputs, ograds):
             return [grad_not_implemented(self, i, inputs[i]) for i in xrange(len(inputs))]
 
-    def AllReduceSum(src, dest=None, worker=None):
-        return AllReduce(theano.scalar.add, worker)(src, dest)
+    def AllReduceSum(src, dest=None, inplace=False, worker=None):
+        return AllReduce(theano.scalar.add, inplace, worker)(src, dest)
 
-    def AllReduceProd(src, dest=None, worker=None):
-        return AllReduce(theano.scalar.mul, worker)(src, dest)
+    def AllReduceProd(src, dest=None, inplace=False, worker=None):
+        return AllReduce(theano.scalar.mul, inplace, worker)(src, dest)
 
-    def AllReduceMax(src, dest=None, worker=None):
-        return AllReduce(theano.scalar.maximum, worker)(src, dest)
+    def AllReduceMax(src, dest=None, inplace=False, worker=None):
+        return AllReduce(theano.scalar.maximum, inplace, worker)(src, dest)
 
-    def AllReduceMin(src, dest=None, worker=None):
-        return AllReduce(theano.scalar.minimum, worker)(src, dest)
+    def AllReduceMin(src, dest=None, inplace=False, worker=None):
+        return AllReduce(theano.scalar.minimum, inplace, worker)(src, dest)
 else:
     AllReduce = None
     AllReduceSum = None

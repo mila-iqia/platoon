@@ -27,7 +27,7 @@ class TestOpsWorker(unittest.TestCase):
         super(TestOpsWorker, self).setUp()
         SEED = 567
         np.random.seed(SEED)
-        self.inp = 30 * np.random.random((8, 10, 5)).astype(config.floatX)
+        self.inp = 30 * np.random.random((100, 400, 200)).astype(config.floatX)
         self.sinp = theano.shared(self.inp)
         self.out = np.empty_like(self.inp)
         self.sout = theano.shared(self.out)
@@ -77,8 +77,8 @@ class TestOpsWorker(unittest.TestCase):
         actual = self.sout.get_value()
         assert np.allclose(expected, actual)
 
-    def test_all_reduce_sum_same_args(self):
-        res = ops.AllReduceSum(self.sinp, self.sinp)
+    def test_all_reduce_sum_inplace(self):
+        res = ops.AllReduceSum(self.sinp, inplace=True)
         f = theano.function([], [], updates=[(self.sinp, res)],
                             accept_inplace=True, profile=True)
         expected = self.total_nw * self.inp
@@ -104,8 +104,8 @@ class TestOpsWorker(unittest.TestCase):
         actual = self.sout.get_value()
         assert np.allclose(expected, actual)
 
-    def test_all_reduce_prod_same_args(self):
-        res = ops.AllReduceProd(self.sinp, self.sinp)
+    def test_all_reduce_prod_inplace(self):
+        res = ops.AllReduceProd(self.sinp, inplace=True)
         f = theano.function([], [], updates=[(self.sinp, res)],
                             accept_inplace=True, profile=True)
         expected = self.inp ** self.total_nw
@@ -131,8 +131,8 @@ class TestOpsWorker(unittest.TestCase):
         actual = self.sout.get_value()
         assert np.allclose(expected, actual)
 
-    def test_all_reduce_max_same_args(self):
-        res = ops.AllReduceMax(self.sinp, self.sinp)
+    def test_all_reduce_max_inplace(self):
+        res = ops.AllReduceMax(self.sinp, inplace=True)
         f = theano.function([], [], updates=[(self.sinp, res)],
                             accept_inplace=True, profile=True)
         expected = self.inp
@@ -158,8 +158,8 @@ class TestOpsWorker(unittest.TestCase):
         actual = self.sout.get_value()
         assert np.allclose(expected, actual)
 
-    def test_all_reduce_min_same_args(self):
-        res = ops.AllReduceMin(self.sinp, self.sinp)
+    def test_all_reduce_min_inplace(self):
+        res = ops.AllReduceMin(self.sinp, inplace=True)
         f = theano.function([], [], updates=[(self.sinp, res)],
                             accept_inplace=True, profile=True)
         expected = self.inp

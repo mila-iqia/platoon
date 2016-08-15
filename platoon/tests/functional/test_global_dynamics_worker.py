@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from platoon.training import global_dynamics as gd
+from platoon.channel.worker import Worker
 
 
 class TestGlobalDynamicsWorker(unittest.TestCase):
@@ -23,7 +24,7 @@ class TestGlobalDynamicsWorker(unittest.TestCase):
             raise exc
 
     def setUp(self):
-        super(TestOpsWorker, self).setUp()
+        super(TestGlobalDynamicsWorker, self).setUp()
         SEED = 567
         np.random.seed(SEED)
         self.inp1 = 30 * np.random.random((8, 10, 5)).astype(config.floatX)

@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division
 
-from ...worker import Worker
-from ...ops import AllReduceSum
+from ..channel.worker import Worker
+from ..ops import AllReduceSum
 
 
 class GlobalDynamics(object):
@@ -22,10 +22,10 @@ class GlobalDynamics(object):
 
     def __call__(self):
         if self._fn is None:
-            raise NotImplementedError("Functionality has not been specified.\n
-                                      Please use {} method to setup GlobalDynamics
-                                      for a set of Variables\nor supply your own
-                                      using {} property.".format(
+            raise NotImplementedError("Functionality has not been specified.\n"
+                                      "Please use {} method to setup GlobalDynamics"
+                                      "for a set of Variables\nor supply your own"
+                                      "using {} method.".format(
                                           repr(self.make_rule), repr(self.fn)))
         self._fn()
 
@@ -45,22 +45,22 @@ class GlobalDynamics(object):
             raise TypeError("Argument `inst` is not of platoon.Worker type.")
         self._worker = inst
 
-    @property
-    def fn(self):
+    def register_fn(self, fun):
         """Internal function implementing global dynamics. Does not accept
         parameters. Global optimization must be done though shared variables.
 
         Supplying your own internal function is your responsibility. It must be
-        able to be called like this: `fn()`.
+        able to be called like this: `fun()`. Also in order to serve its purpose,
+        it needs to have multi-gpu or even multi-node functionality. As a result,
+        a platoon.Worker or other interface need to be used.
+
+        :param fun: Implements global dynamics by using information from many workers
+        :type fun: callable
 
         """
-        return self._fn
-
-    @property.setter
-    def fn(self, inst):
-        if not hasattr(inst, '__call__'):
+        if not hasattr(fun, '__call__'):
             raise TypeError("Supplied object is not a callable.")
-        self._fn = inst
+        self._fn = fun
 
     def make_rule(self, *args):
         """Create GlobalDynamics optimization function for local data in `args`.
@@ -75,8 +75,7 @@ class GlobalDynamics(object):
 
 
 class _GlobalDynamicsNoSet(GlobalDynamics):
-    @property.setter
-    def fn(self, inst):
+    def register_fn(self, fun):
         raise AttributeError("Cannot set internal function. Use {} method.".format(
             repr(self.make_rule)))
 
@@ -122,11 +121,11 @@ class SGD(_GlobalDynamicsNoSet):
 
         """
         import theano
-        if isinstance(local_updates, theano.SharedVariable):
+        if isinstance(local_updates, theano.compile.SharedVariable):
             local_updates = [local_updates]
         global_updates = []
         for update in local_updates:
-            gup = AllReduceSum(update, update)
+            gup = AllReduceSum(update, inplace=True)
             if self.average:
                 gup /= self.worker.global_size
             global_updates.append(gup)
