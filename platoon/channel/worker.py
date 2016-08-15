@@ -12,7 +12,6 @@ import zmq
 try:
     import pygpu
     from pygpu import collectives as gpucoll
-    from pygpu import gpuarray as pygpuga
     from theano import gpuarray as theanoga
     from theano import config as theanoconf
 except ImportError:
@@ -83,7 +82,7 @@ class Worker(object):
         except Exception as exc:
             print(PlatoonWarning("Failed to register in a local GPU comm world.", exc),
                   file=sys.stderr)
-            print(PlatoonWarning("Platoon new interface will not be functional."),
+            print(PlatoonWarning("Platoon `all_reduce` interface will not be functional."),
                   file=sys.stderr)
             self._local_comm = None
         self._shmem_names = dict()
@@ -208,9 +207,10 @@ class Worker(object):
 
     def _register_to_platoon(self):
         if pygpu:
-            gpuctx = theanoga.get_context(None)
+            self.ctx_name = None
+            self.gpuctx = theanoga.get_context(self.ctx_name)
             self.device = theanoconf.device
-            self._local_id = gpucoll.GpuCommCliqueId(context=gpuctx)
+            self._local_id = gpucoll.GpuCommCliqueId(context=self.gpuctx)
             # Ask controller for local's info to participate in
             response = self.send_req("platoon-get_platoon_info",
                                      info={'device': self.device,
@@ -272,7 +272,7 @@ class Worker(object):
 
     def shared(self, array):
         """Creates a new posix shared memory buffer to be shared among Workers
-        and their Controller and maps `array` to that buffer.
+        and their Controller and maps the size of `array` to that buffer.
 
         Controller is requested to create a new shared memory buffer with the
         same size as `array` in order to be used in multi-node/gpu platoon
@@ -280,7 +280,7 @@ class Worker(object):
         in a host have access to that memory.
 
         :param array: will correspond to shared buffer in host with the same size
-        :type array: :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+        :type array: :ref:`pygpu.gpuarray.GpuArray`
 
         Notes
         -----
@@ -289,29 +289,29 @@ class Worker(object):
         needed) a new shared memory's name. This is due to the fact that
         Controller can service one Worker at a time and a platoon collective
         service is a blocking one across Controllers. Current implementation
-        is valid because calls to pygpu.collectives interface are blocking
+        is valid because calls to pygpu.collectives interface are synchronous
         across workers.
 
         """
-        if not isinstance(array, theanoga.GpuArraySharedVariable):
-            raise TypeError("`array` input is not theano.gpuarray.GpuArraySharedVariable.")
+        if not isinstance(array, pygpu.gpuarray.GpuArray):
+            raise TypeError("`array` input is not pygpu.gpuarray.GpuArray.")
 
-        if array in self.shared_arrays:
-            return self.shared_arrays[array]
+        bytesize = array.size * array.itemsize
+
+        if bytesize in self.shared_arrays:
+            return self.shared_arrays[bytesize]
         else:
-            internal = array.get_value(borrow=True, return_internal_type=True)
-            size = internal.size * internal.itemsize
-            if internal.flags['F']:
+            if array.flags['F']:
                 order = 'F'
             else:
                 order = 'C'
 
             try:
                 shared_mem_name = self.send_req("platoon-init_new_shmem",
-                                                info={'size': size})
+                                                info={'size': bytesize})
 
                 shmref = posix_ipc.SharedMemory(shared_mem_name)
-                shm = mmap(fd=shmref.fd, length=size)
+                shm = mmap(fd=shmref.fd, length=bytesize)
                 shmref.close_fd()
             except Exception as exc:
                 try:
@@ -319,11 +319,11 @@ class Worker(object):
                 except (NameError, posix_ipc.ExistentialError):
                     pass
                 raise PlatoonError("Failed to get access to shared memory buffer.", exc)
-            shared_array = numpy.ndarray(internal.shape, dtype=internal.dtype,
+            shared_array = numpy.ndarray(array.shape, dtype=array.dtype,
                                          buffer=shm, offset=0, order=order)
-            self._shmem_names[array] = shared_mem_name  # Keep for common ref with Controller
-            self._shmrefs[array] = shmref  # Keep for unlinking when closing
-            self.shared_arrays[array] = shared_array
+            self._shmem_names[bytesize] = shared_mem_name  # Keep for common ref with Controller
+            self._shmrefs[bytesize] = shmref  # Keep for unlinking when closing
+            self.shared_arrays[bytesize] = shared_array
             return shared_array
 
     def all_reduce(self, src, op, dest=None):
@@ -331,16 +331,16 @@ class Worker(object):
 
         Parameters
         ----------
-        src: :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+        src: :ref:`pygpu.gpuarray.GpuArray`
             Array to be reduced.
         op: string
             Key indicating operation type. See :ref:`pygpu.collectives.TO_RED_OP`
-        dest: :ref:`theano.gpuarray.type.GpuArraySharedVariable`, optional
+        dest: :ref:`pygpu.gpuarray.GpuArray`, optional
             Array to collect reduce operation result.
 
         Returns
         -------
-        result: None or :ref:`theano.gpuarray.type.GpuArraySharedVariable`
+        result: None or :ref:`pygpu.gpuarray.GpuArray`
             New Theano gpu shared variable which contains operation result
             if `dest` is None, else nothing.
 
@@ -357,34 +357,24 @@ class Worker(object):
         """
 
         if self._local_comm is None:
-            raise PlatoonError("New interface is not available. Check log.")
+            raise PlatoonError("`all_reduce` interface is not available. Check log.")
 
-        if isinstance(src, theanoga.GpuArraySharedVariable):
-            internal_src = src.get_value(borrow=True, return_internal_type=True)
-        else:
-            raise TypeError("`src` input is not theano.gpuarray.GpuArraySharedVariable.")
+        if not isinstance(src, pygpu.gpuarray.GpuArray):
+            raise TypeError("`src` input is not pygpu.gpuarray.GpuArray.")
 
-        if dest:
-            if isinstance(dest, theanoga.GpuArraySharedVariable):
-                internal_dest = dest.get_value(borrow=True, return_internal_type=True)
-            else:
-                raise TypeError("`dest` input is not theano.gpuarray.GpuArraySharedVariable.")
-        else:
-            internal_dest = None
+        if dest is not None:
+            if not isinstance(dest, pygpu.gpuarray.GpuArray):
+                raise TypeError("`dest` input is not pygpu.gpuarray.GpuArray.")
 
         try:
             # Execute collective operation in local NCCL communicator world
-            internal_res = self._local_comm.all_reduce(internal_src,
-                                                       op, internal_dest)
+            res = self._local_comm.all_reduce(src, op, dest)
         except Exception as exc:
             raise PlatoonError("Failed to execute pygpu all_reduce", exc)
 
-        if dest is None:
-            res = theanoga.gpuarray_shared_constructor(internal_res, borrow=True)
-        else:
+        if dest is not None:
             res = dest
-            internal_res = internal_dest
-        internal_res.sync()
+        res.sync()
 
         # If running with multi-node mode
         if self._multinode:
@@ -395,20 +385,20 @@ class Worker(object):
             first = self.send_req("platoon-am_i_first")
             if first:
                 # Copy from GpuArray to shared memory buffer
-                internal_res.read(res_array)
-                internal_res.sync()
+                res.read(res_array)
+                res.sync()
 
                 # Request from controller to perform the same collective operation
                 # in MPI communicator world using shared memory buffer
-                self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res],
-                                                          'dtype': str(internal_res.dtype),
+                self.send_req("platoon-all_reduce", info={'shmem': self._shmem_names[res.size * res.itemsize],
+                                                          'dtype': str(res.dtype),
                                                           'op': op})
             self.unlock()
 
             # Concurrently copy from shared memory back to result GpuArray
             # after Controller has finished global collective operation
-            internal_res.write(res_array)
-            internal_res.sync()
+            res.write(res_array)
+            res.sync()
 
         if dest is None:
             return res
