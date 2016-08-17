@@ -134,7 +134,7 @@ class SGD(_GlobalDynamicsNoSet):
                                    accept_inplace=True)
 
 
-class SumSGD(SGD):
+def SumSGD(worker=None):
     """Synchronous Stochastic Gradient Descent: summing version
 
     See Also
@@ -142,11 +142,10 @@ class SumSGD(SGD):
     :ref:`SGD`
 
     """
-    def __init__(self, worker=None):
-        super(SumSGD, self).__init__(average=False, worker=worker)
+    return SGD(average=False, worker=worker)
 
 
-class AverageSGD(SGD):
+def AverageSGD(worker=None):
     """Synchronous Stochastic Gradient Descent: averaging version
 
     See Also
@@ -154,5 +153,65 @@ class AverageSGD(SGD):
     :ref:`SGD`
 
     """
-    def __init__(self, worker=None):
-        super(AverageSGD, self).__init__(average=True, worker=worker)
+    return SGD(average=True, worker=worker)
+
+
+class EASGD(_GlobalDynamicsNoSet):
+    """Synchronous Elastic Averaging Gradient Descent
+
+    This algorithm is described in more details in the following paper:
+    http://arxiv.org/abs/1412.6651
+
+    """
+    def make_rule(self, local_particle, central_particle, alpha):
+        """Make EASGD rule.
+
+        According to this rule, every N iterations, a worker synchronises his
+        parameters with the master parameters. This is done by moving each set of
+        parameters toward the other by an amount proportional to the difference
+        between the individual params (this proportion is parametrized by `alpha`).
+
+        The sync equations are as follow:
+        diff = w_worker - w_master
+        w_worker = w_worker - alpha * diff
+        w_master = w_master + alpha * diff
+
+        Parameters
+        ----------
+        local_particle: {theano.SharedVariable, list of theano.SharedVariable}
+            A particle's position in parameter space doing local SGD.
+        central_particle: {theano.SharedVariable, list of theano.SharedVariable}
+            Central particle's position in parameter space interacting with
+            local particles.
+        alpha: scalar (theano.SharedVariable)
+            "Elastic" force's coefficient
+
+        .. note::
+            If `alpha` == 0 is used, there is no synchronization of the
+            parameters meaning that each worker is independently training using SGD.
+
+        """
+        import theano
+        if isinstance(local_particle, theano.compile.SharedVariable):
+            local_particle = [local_particle]
+        if isinstance(cental_particle, theano.compile.SharedVariable):
+            cental_particle = [central_particle]
+        self.alpha = alpha
+
+        new_local = []
+        new_central = []
+        for local_position, central_position in zip(local_particle, central_particle):
+            distance = local_position - central_position
+            elastic_force = alpha * distance
+            # Note: not equivalent to physical force as `elastic_force`:=Δx/Δt
+            # and not Δp/Δt
+            local_new_position = local_position - elastic_force
+            elastic_force = AllReduceSum(elastic_force)  # is inplace correct here?
+            central_new_position = cental_position + elastic_force
+
+            new_local.append(local_new_position)
+            new_central.append(central_new_position)
+
+        updates = list(zip(local_particle, new_local)) + \
+            list(zip(central_particle, new_central))
+        self._fn = theano.function([], [], updates=updates, accept_inplace=True)
