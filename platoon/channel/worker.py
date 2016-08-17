@@ -164,9 +164,18 @@ class Worker(object):
         return self._local_size
 
     @property
+    def local_rank(self):
+        "Worker's rank in respect to local host's controller"
+
+    @property
     def global_size(self):
         "Number of workers spawned across all hosts in total"
         return self._global_size
+
+    @property
+    def global_rank(self):
+        "Worker's rank in respect to all hosts' controllers in total"
+        return self._global_rank
 
 ################################################################################
 #                   Initialization and Finilization Methods                    #
@@ -217,11 +226,13 @@ class Worker(object):
                                            'local_id': self._local_id.comm_id.decode('utf-8')})
             self._local_id.comm_id = bytearray(response['local_id'].encode('utf-8'))
             self._local_size = response['local_size']
+            self._local_rank = response['local_rank']
             self._local_comm = gpucoll.GpuComm(self._local_id,
                                                self._local_size,
-                                               response['local_rank'])
+                                               self._local_rank)
             self._multinode = response['multinode']
             self._global_size = response['global_size']
+            self._global_rank = response['global_rank']
         else:
             raise AttributeError("pygpu or theano is not imported")
 

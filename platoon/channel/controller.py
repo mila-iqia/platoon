@@ -290,9 +290,12 @@ class Controller(object):
         self._region_comm = MPI.COMM_WORLD
         self._region_size = MPI.COMM_WORLD.Get_size()
         self._region_rank = MPI.COMM_WORLD.Get_rank()
-        global_size = numpy.array([self._global_size])
-        self._region_comm.Allreduce(global_size, global_size, op=MPI.SUM)
-        self._global_size = global_size[0]
+
+        local_size = numpy.array([self._local_size], dtype='int32')
+        self._all_local_size = numpy.zeros((self._region_size, ), dtype='int32')
+        self._region_comm.Allgather([local_size, MPI.UNSIGNED_INT],
+                                    [self._all_local_size, MPI.UNSIGNED_INT])
+        self._global_size = sum(self._all_local_size)
 
     def _clean(self):
         print("Cleaning up...", file=sys.stderr)
@@ -372,9 +375,14 @@ class Controller(object):
         response = dict()
         response['local_id'] = self._local_id
         response['local_size'] = self._local_size
-        response['local_rank'] = self._devices.index(req_info['device'])
+        local_rank = self._devices.index(req_info['device'])
+        response['local_rank'] = local_rank
         response['multinode'] = self._multinode
         response['global_size'] = self._global_size
+        if self._multinode:
+            response['global_rank'] = sum(self._all_local_size[:self._region_rank]) + local_rank
+        else:
+            response['global_rank'] = local_rank
         return response
 
     def _init_new_shmem(self, req_info):
