@@ -194,8 +194,8 @@ class EASGD(_GlobalDynamicsNoSet):
         import theano
         if isinstance(local_particle, theano.compile.SharedVariable):
             local_particle = [local_particle]
-        if isinstance(cental_particle, theano.compile.SharedVariable):
-            cental_particle = [central_particle]
+        if isinstance(central_particle, theano.compile.SharedVariable):
+            central_particle = [central_particle]
         self.alpha = alpha
 
         new_local = []
@@ -206,12 +206,39 @@ class EASGD(_GlobalDynamicsNoSet):
             # Note: not equivalent to physical force as `elastic_force`:=Δx/Δt
             # and not Δp/Δt
             local_new_position = local_position - elastic_force
-            elastic_force = AllReduceSum(elastic_force)  # is inplace correct here?
-            central_new_position = cental_position + elastic_force
+            total_elastic_force = AllReduceSum(elastic_force)
+            central_new_position = central_position + total_elastic_force
 
             new_local.append(local_new_position)
             new_central.append(central_new_position)
 
         updates = list(zip(local_particle, new_local)) + \
             list(zip(central_particle, new_central))
+        self._fn = theano.function([], [], updates=updates)
+
+
+class Downpour(_GlobalDynamicsNoSet):
+    def make_rule(self, local_particle, local_acc_updates, global_particle):
+        import theano
+        from theano.tensor import basic
+        if isinstance(local_particle, theano.compile.SharedVariable):
+            local_particle = [local_particle]
+        if isinstance(local_acc_updates, theano.compile.SharedVariable):
+            local_acc_updates = [local_acc_updates]
+        if isinstance(global_particle, theano.compile.SharedVariable):
+            global_particle = [global_particle]
+
+        new_global = []
+        new_local = []
+        new_acc_updates = []
+        for lp, lau, gp in zip(local_particle, local_acc_updates, global_particle):
+            global_acc_updates = AllReduceSum(lau, inplace=True)
+            new_global.append(gp + global_acc_updates)
+            new_local.append(new_global[-1])
+            new_acc_updates.append(basic.zeros_like(lau))
+
+        updates = list(zip(local_particle, new_local)) + \
+            list(zip(local_acc_updates, new_acc_updates)) + \
+            list(zip(global_particle, new_global))
+
         self._fn = theano.function([], [], updates=updates, accept_inplace=True)

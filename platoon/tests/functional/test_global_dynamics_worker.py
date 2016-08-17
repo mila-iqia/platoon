@@ -19,6 +19,7 @@ class TestGlobalDynamicsWorker(unittest.TestCase):
         try:
             cls.worker = Worker(control_port=5567)
             cls.total_nw = cls.worker.global_size
+            cls.rank = cls.worker.global_rank
         except Exception as exc:
             print(exc, file=sys.stderr)
             raise exc
@@ -69,6 +70,56 @@ class TestGlobalDynamicsWorker(unittest.TestCase):
         expected = self.inp2
         actual = self.sinp2.get_value()
         assert np.allclose(expected, actual)
+
+    def test_EASGD(self):
+        lp = np.array([3, 4], dtype=config.floatX)
+        if self.rank % 2 != 0:
+            lp = -lp
+        slp = theano.shared(lp)
+        cp = np.array([0, 0], dtype=config.floatX)
+        scp = theano.shared(cp)
+        alpha = 0.5
+
+        easgd = gd.EASGD()
+        easgd.make_rule(slp, scp, alpha)
+        easgd()
+
+        if self.total_nw % 2 == 0:
+            expectedcp = cp
+            actualcp = scp.get_value()
+            assert np.allclose(expectedcp, actualcp), (expectedcp, actualcp)
+            expectedlp = lp / 2
+            actuallp = slp.get_value()
+            assert np.allclose(expectedlp, actuallp), (expectedlp, actuallp)
+        else:
+            expectedcp = lp / 2
+            actualcp = scp.get_value()
+            assert np.allclose(expectedcp, actualcp), (expectedcp, actualcp)
+            expectedlp = lp / 2
+            actuallp = slp.get_value()
+            assert np.allclose(expectedlp, actuallp), (expectedlp, actuallp)
+
+    def test_Downpour(self):
+        lp = np.random.random((2,)).astype(config.floatX)
+        slp = theano.shared(lp)
+        gp = np.array([0, 1], dtype=config.floatX)
+        sgp = theano.shared(gp)
+        lau = (self.rank + 1) * np.array([1, 1], dtype=config.floatX)
+        slau = theano.shared(lau)
+
+        downpour = gd.Downpour()
+        downpour.make_rule(slp, slau, sgp)
+        downpour()
+
+        expected = np.array([0, 0], dtype=config.floatX)
+        actual = slau.get_value()
+        assert np.allclose(expected, actual), (expected, actual)
+        expected = sum(np.arange(self.total_nw + 1)) * np.array([1, 1], dtype=config.floatX)
+        expected += np.array([0, 1], dtype=config.floatX)
+        actual = sgp.get_value()
+        assert np.allclose(expected, actual), (expected, actual)
+        actual = slp.get_value()
+        assert np.allclose(expected, actual), (expected, actual)
 
     @classmethod
     def tearDownClass(cls):
