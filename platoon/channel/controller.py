@@ -15,6 +15,8 @@ import posix_ipc
 import zmq
 
 try:
+    from mpi4py import rc
+    rc.initialize = False
     from mpi4py import MPI
 except ImportError:
     MPI = None
@@ -87,9 +89,10 @@ class Controller(object):
             print("## Running in multi-node mode.")
             try:
                 self._init_region_comm()
-            except AttributeError as exc:
+            except Exception as exc:
                 print("WARNING! {} while being in multi-node mode".format(exc),
                       file=sys.stderr)
+                self._region_comm = None
 
         if data_port:
             self.init_data(data_port, data_hwm)
@@ -261,6 +264,9 @@ class Controller(object):
         except Exception as exc:
             print(PlatoonError("Unexpected exception", exc), file=sys.stderr)
             self._clean()
+        else:
+            if self._multinode and MPI:
+                MPI.Finalize()
         finally:  # Close sockets and unlink for shared memory
             self._close()
         return self._success
@@ -288,6 +294,7 @@ class Controller(object):
     def _init_region_comm(self):
         if MPI is None:
             raise AttributeError("mpi4py is not imported")
+        MPI.Init()
         self._region_comm = MPI.COMM_WORLD
         self._region_size = MPI.COMM_WORLD.Get_size()
         self._region_rank = MPI.COMM_WORLD.Get_rank()
@@ -301,7 +308,7 @@ class Controller(object):
     def _clean(self):
         print("Cleaning up...", file=sys.stderr)
         self._kill_workers()
-        if self._multinode:
+        if self._multinode and self._region_comm:
             print("Aborting MPI job...", file=sys.stderr)
             self._region_comm.Abort(errorcode=1)
 
@@ -420,8 +427,8 @@ class Controller(object):
     def _all_reduce(self, req_info):
         if not self._multinode:
             raise PlatoonError("Request to all_reduce, when multi-node is off.")
-        if MPI is None:
-            raise AttributeError("mpi4py is not imported.")
+        if self._region_comm is None:
+            raise PlatoonError("`all_reduce` request is not available. Check log.")
         dtype = req_info['dtype']
         op = req_info['op']
         array = self.shared_buffers[req_info['shmem']]

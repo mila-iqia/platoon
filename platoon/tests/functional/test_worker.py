@@ -115,6 +115,7 @@ class TestWorker(unittest.TestCase):
         cls.worker.close()
 
 if __name__ == '__main__':
+    print("### Beginning Worker's tests...")
     suite = unittest.TestLoader().loadTestsFromTestCase(TestWorker)
     res = unittest.TextTestRunner(verbosity=1).run(suite)
     if len(res.failures) != 0 or len(res.errors) != 0:
