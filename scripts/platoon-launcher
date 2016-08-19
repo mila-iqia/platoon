@@ -65,7 +65,7 @@ e.g. usage: platoon-launcher lstm -D cuda0 cuda3 (explicit config)
 If multi-node is explicitly specified through command-line arguments, extra
 configuration through appropriate environmentals per host or files needs to be
 done in order to describe which devices will be used in each host. Host names
-are given the same way they are given in MPI's `mpiexec`.
+are given the same way they are given in MPI's `mpirun`.
 
 e.g. usage: platoon-launcher lstm -H lisa0 lisa1
             (gpus on lisa0 and gpus on lisa1)
@@ -114,19 +114,19 @@ if __name__ == '__main__':
                 hosts = None
         else:
             hosts = args.hosts
+    else:
+        hosts = []
+        with open(pbs) as nodefile:
+            for node in nodefile:
+                hosts.append(node)
 
     # Check if we run on multi-node
-    if pbs or (hosts and len(hosts) > 1):
-        if pbs:
-            hosts = []
-            with open(pbs) as nodefile:
-                for node in nodefile:
-                    hosts.append(node)
+    if hosts and len(hosts) > 1:
         print("### Starting multi-node/gpu training on: {} ...".format(' '.join(hosts)), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
         env = dict(os.environ)
         theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
-        command = ["mpiexec"]
+        command = ["mpirun"]
         command += ["--output-filename", log_file.format("log")]
         command += ["-mca", "mpi_warn_on_fork", "0"]
         if pbs is None:
