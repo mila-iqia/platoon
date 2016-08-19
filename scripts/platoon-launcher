@@ -117,6 +117,10 @@ if __name__ == '__main__':
 
     # Check if we run on multi-node
     if pbs or (hosts and len(hosts) > 1):
+        if pbs:
+            hosts = []
+            with open(pbs) as nodefile:
+                hosts.append(nodefile.readline())
         print("### Starting multi-node/gpu training on: {} ...".format(hosts), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
         env = dict(os.environ)
