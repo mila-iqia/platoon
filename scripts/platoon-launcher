@@ -120,13 +120,15 @@ if __name__ == '__main__':
         if pbs:
             hosts = []
             with open(pbs) as nodefile:
-                hosts.append(nodefile.readline())
-        print("### Starting multi-node/gpu training on: {} ...".format(hosts), end=' ')
+                for node in nodefile:
+                    hosts.append(node)
+        print("### Starting multi-node/gpu training on: {} ...".format(' '.join(hosts)), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
         env = dict(os.environ)
         theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
         command = ["mpiexec"]
-        command += ["--output-file", log_file.format("log")]
+        command += ["--output-filename", log_file.format("log")]
+        command += ["-mca", "mpi_warn_on_fork", "0"]
         if pbs is None:
             command += ["-np", str(len(hosts))]
             command += ["-H", ','.join(hosts)]
