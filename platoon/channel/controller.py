@@ -81,9 +81,10 @@ class Controller(object):
         signal.signal(signal.SIGTERM, self._handle_force_close)
         signal.signal(signal.SIGINT, self._handle_force_close)
 
-        # If we are starting a multi-node training (new interface)
+        # If we are starting a multi-node training
         self._multinode = multi
         if self._multinode:
+            print("## Running in multi-node mode.")
             try:
                 self._init_region_comm()
             except AttributeError as exc:
@@ -114,7 +115,7 @@ class Controller(object):
         self._shmrefs = dict()
         self.shared_buffers = dict()
 
-        # If we are using the new interface, then initialize workers
+        # Initialize workers
         if experiment_name:
             try:
                 os.makedirs(log_directory)
@@ -501,7 +502,7 @@ class Controller(object):
             except KeyError:
                 # 3. Else try to use all compatible GPUs in host
                 try:
-                    print("WARNING! Using all compatible GPUs in host.", file=sys.stderr)
+                    print("WARNING! Using all compatible GPUs in " + hostname + ".", file=sys.stderr)
                     from pygpu import gpuarray as ga
                     devcount = ga.count_devices("cuda", 0)
                     print("WARNING! Found {} GPUs!".format(devcount), file=sys.stderr)
@@ -515,7 +516,7 @@ class Controller(object):
                     sys.exit(2)
 
         if not devices_found:
-            print("ERROR! Cound not find any compatible GPUs in host.", file=sys.stderr)
+            print("ERROR! Cound not find any compatible GPUs in " + hostname + ".", file=sys.stderr)
             sys.exit(4)
 
         print("## On " + hostname + " using: " + " ".join(devices_found))
