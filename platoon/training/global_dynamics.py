@@ -207,7 +207,7 @@ class EASGD(_GlobalDynamicsNoSet):
             # Note: not equivalent to physical force as `elastic_force`:=Δx/Δt
             # and not Δp/Δt
             local_new_position = local_position - elastic_force
-            total_elastic_force = AllReduceSum(elastic_force)
+            total_elastic_force = AllReduceSum(elastic_force, inplace=True)
             central_new_position = central_position + total_elastic_force
 
             new_local.append(local_new_position)
@@ -215,7 +215,7 @@ class EASGD(_GlobalDynamicsNoSet):
 
         updates = list(zip(local_particle, new_local)) + \
             list(zip(central_particle, new_central))
-        self._fn = theano.function([], [], updates=updates)
+        self._fn = theano.function([], [], updates=updates, accept_inplace=True)
 
 
 class Downpour(_GlobalDynamicsNoSet):
