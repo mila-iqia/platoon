@@ -118,7 +118,8 @@ if __name__ == '__main__':
         hosts = []
         with open(pbs) as nodefile:
             for node in nodefile:
-                hosts.append(node)
+                hosts.append(node.rstrip())
+            hosts = list(set(hosts))
 
     # Check if we run on multi-node
     if hosts and len(hosts) > 1:

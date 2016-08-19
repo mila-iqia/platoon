@@ -166,6 +166,7 @@ class Worker(object):
     @property
     def local_rank(self):
         "Worker's rank in respect to local host's controller"
+        return self._local_rank
 
     @property
     def global_size(self):
