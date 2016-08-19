@@ -67,8 +67,8 @@ configuration through appropriate environmentals per host or files needs to be
 done in order to describe which devices will be used in each host. Host names
 are given the same way they are given in MPI's `mpiexec`.
 
-e.g. usage: platoon-launcher lstm -nw 2 2 -H lisa0 lisa1
-            (2 gpus on lisa0 and 2 gpus on lisa1)
+e.g. usage: platoon-launcher lstm -H lisa0 lisa1
+            (gpus on lisa0 and gpus on lisa1)
 
 NOTIFICATION: This launcher is used to set up the new worker interface (the old
 is still usable - but not in multi-node configs). The new worker interface
@@ -105,25 +105,28 @@ if __name__ == '__main__':
         controller_type = "platoon"
 
     # If not specified in launcher, check for other configuration types
-    if args.hosts is None:
-        try:
-            hosts = configparser.fetch_hosts()
-        except KeyError:
-            hosts = None
-    else:
-        hosts = args.hosts
+    pbs = os.getenv("PBS_NODEFILE")
+    if pbs is None:
+        if args.hosts is None:
+            try:
+                hosts = configparser.fetch_hosts()
+            except KeyError:
+                hosts = None
+        else:
+            hosts = args.hosts
 
     # Check if we run on multi-node
-    if hosts and len(hosts) > 1:
+    if pbs or (hosts and len(hosts) > 1):
         print("### Starting multi-node/gpu training on: {} ...".format(hosts), end=' ')
         log_file = os.path.join(logs_folder, "multi-node-controllers.{}")
         env = dict(os.environ)
         theano_flags = "THEANO_FLAGS={0},device={1}".format(env.pop('THEANO_FLAGS', ''), "cpu")
         command = ["mpiexec"]
         command += ["--output-file", log_file.format("log")]
-        command += ["-np", str(len(hosts))]
-        command += ["-H", ','.join(hosts)]
-        command += ["--map-by", "ppr:1:node"]
+        if pbs is None:
+            command += ["-np", str(len(hosts))]
+            command += ["-H", ','.join(hosts)]
+            command += ["--map-by", "ppr:1:node"]
         command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
         if controller_type == "platoon":
             executable = ["-m", "platoon.channel.controller"]
