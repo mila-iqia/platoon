@@ -35,11 +35,13 @@ platoon_cfg = ConfigParser.SafeConfigParser(
      'PID': str(os.getpid()),
      }
 )
+platoon_cfg.optionxform = str
 platoon_cfg.read(config_files)
 # Having a raw version of the config around as well enables us to pass
 # through config values that contain format strings.
 # The time required to parse the config twice is negligible.
 platoon_raw_cfg = ConfigParser.RawConfigParser()
+platoon_raw_cfg.optionxform = str
 platoon_raw_cfg.read(config_files)
 
 
