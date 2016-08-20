@@ -334,8 +334,8 @@ class Controller(object):
         if hasattr(self, 'asocket'):
             self.asocket.close()
             self.acontext.term()
-        self._lock.close()
         try:
+            self._lock.close()
             self._lock.unlink()
         except posix_ipc.ExistentialError:
             pass
@@ -346,13 +346,15 @@ class Controller(object):
                 pass
 
     def _handle_force_close(self, signum, frame):
-        """Handle SIGTERM signals from MPI.Abort
+        """Handle SIGTERM and SIGINT signals from MPI.Abort
 
         This is expected to happen when something abnormal has happened in other
         controllers over MPI.COMM_WORLD across host which participate in the
         multi-node training.
 
         """
+        print("Caught signal {}. Killing workers and closing connections...".format(
+              signum), file=sys.stderr)
         self._kill_workers()
         self._close()
         sys.exit(1)
