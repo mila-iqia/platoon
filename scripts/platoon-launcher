@@ -105,21 +105,13 @@ if __name__ == '__main__':
         controller_type = "platoon"
 
     # If not specified in launcher, check for other configuration types
-    pbs = os.getenv("PBS_NODEFILE")
-    if pbs is None:
-        if args.hosts is None:
-            try:
-                hosts = configparser.fetch_hosts()
-            except KeyError:
-                hosts = None
-        else:
-            hosts = args.hosts
+    if args.hosts is None:
+        try:
+            hosts = configparser.fetch_hosts()
+        except KeyError:
+            hosts = None
     else:
-        hosts = []
-        with open(pbs) as nodefile:
-            for node in nodefile:
-                hosts.append(node.rstrip())
-            hosts = list(set(hosts))
+        hosts = args.hosts
 
     # Check if we run on multi-node
     if hosts and len(hosts) > 1:
@@ -130,10 +122,9 @@ if __name__ == '__main__':
         command = ["mpirun"]
         command += ["--output-filename", log_file.format("log")]
         command += ["-mca", "mpi_warn_on_fork", "0"]
-        if pbs is None:
-            command += ["-np", str(len(hosts))]
-            command += ["-H", ','.join(hosts)]
-            command += ["--map-by", "ppr:1:node"]
+        command += ["-np", str(len(hosts))]
+        command += ["-H", ','.join(hosts)]
+        command += ["--map-by", "ppr:1:node"]
         command += shlex.split("-x " + " -x ".join(env.keys()) + " -x " + theano_flags)
         if controller_type == "platoon":
             executable = ["-m", "platoon.channel.controller"]
