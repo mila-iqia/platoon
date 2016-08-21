@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+:mod:`channel.controller` -- Coordination of multiple Platoon Worker processes
+==============================================================================
+
+.. module:: controller
+   :platform: Unix
+   :synopsis: Control Workers and execute their requests in a multi-node/process
+              system.
+
+Contains :class:`Controller` and helper functions to spawn an instance of this
+class. Upon creation, a Controller will initiate connections (ZMQ and possibly
+MPI), setup intra-node locks and spawn worker processes as its children,
+according to the given arguments and/or configuration.
+
+This file can also be executed, spawning a Controller instance and making
+serve until all of its children processes exit or an error occurs. It will be
+executed in a separate process as a default by :file:`platoon-launcher`, if user
+has not provided another executable (by the name '<experiment>_controller.py')
+which will spawn base :class:`Controller` or a decedent class.
+
+"""
 from __future__ import absolute_import, print_function
 import os
 import sys
@@ -30,38 +51,35 @@ class Controller(object):
     General multi-process controller
 
     This class provides the necessary features to dispatch data mini-batches
-    to workers and handle control requests. Using this class should be done
-    by having another class inherit from it and override the method
-    `handle_control()`.
+    to workers and handle control requests.
 
     .. warning::
+       Due to the underlying implementation it is a bad idea to
+       attempt to do both in the same process, even on different
+       threads. This will suffer from interlock problems and may
+       negate any speedup you could get from using multiple :class:`Worker`s.
 
-        Due to the underlying implementation it is a bad idea to
-        attempt to do both in the same process, even on different
-        threads.  This will suffer from interlock problems and may
-        negate any speedup you could get from using multiple Workers.
-
-        Because of this issue, the class may be split in the future.
+       Because of this issue, the class may be split in the future.
 
     Parameters
     ----------
-    control_port : int
-        The control port number.
-    data_port : int
-        The data port number.
-    data_hwm : int
-        High water mark (see pyzmq docs).
-    devices : list of strings
-        Contains device names in clique order (prefer ring topology)
-    experiment_name : str
-        Name of experiment given in `platoon_launcher`. Will find
-        <experiment_name>_worker.py with this.
-    log_directory : str
-        Directory in which this controller's workers will create log files.
-    worker_args : str
-        Arguments for workers specified in `platoon_launcher`, if any
-    multi : bool
-        True, if we start a multi-node experiment. Flag to start MPI.
+    control_port : int, optional
+       The control port number.
+    data_port : int, optional
+       The data port number.
+    data_hwm : int, optional
+       High water mark (see pyzmq docs).
+    devices : list of strings, optional
+       Contains device names in clique order (prefer ring topology).
+    experiment_name : str, optional
+       Name of experiment given in :file:`platoon_launcher`. Will find
+       `experiment_name`_worker.py with this.
+    log_directory : str, optional
+       Directory in which this controller's workers will create log files.
+    worker_args : str, optional
+       Arguments for workers specified in :file:`platoon_launcher`, if any.
+    multi : bool, optional
+       True, if we start a multi-node experiment. Flag to start MPI.
 
     """
 
@@ -155,13 +173,28 @@ class Controller(object):
         raise NotImplementedError("Request type '{0}' is not developed in class "
                                   "{1}. A class should inherit {1} and "
                                   "override method `handle_control` in order to add "
-                                  "behavior.".format(req, __class__.__name__))
+                                  "behavior.".format(req, self.__class__.__name__))
 
     def _handle_base_control(self, req, worker_id, req_info):
         """
-        This method handle base control commands.
-        Those commands should not be used in the handle_control method.
-        All base control commands should start with "platoon-".
+        This method handles base control commands.
+
+        In most cases it acts as a switcher to :class:`Controller`'s methods
+        which execute the command `req`.
+
+        Parameters
+        ----------
+        req : str
+           Request type.
+        worker_id : int
+           Requesting :class:`Worker`'s process id.
+        req_info : dict
+           Contains :class:`Worker`'s input for its request to :class:`Controller`.
+
+        .. note::
+           Those commands should not be used in the handle_control method.
+           All base control commands should start with "platoon-".
+
         """
         response = None
         if req == "platoon-get_job_uid":
@@ -185,28 +218,37 @@ class Controller(object):
 
         return response
 
-    # Method `worker_is_done` is not supported anymore.
-    # Rationale:
-    # 1. For supporting multi-node controllers it was necessary to move the
-    # spawning of worker process to Controller object, so Controller needs to
-    # wait for the exit of its worker children. This was done for the following
-    # reasons:
-    #     a. controller processes may be MPI processes, while worker processes
-    #     are not.
-    #     b. In multi-node case, worker processes have to be spawned in a
-    #     another host than the one executing the launcher.
-    #     c. It would be better, if there was a uniform way to spawn worker
-    #     process which is independent whether we are in the single-node or
-    #     multi-node case.
-    # 2. Given (1): Each process oughts to take care cleaning and exiting
-    # gracefully by itself, unless a fatal error has happened or a irrecovable
-    # error for the procedure has happened, in which case process should exit
-    # normally with non-success code. In fatal or irrecovable cases, their
-    # father process (i.e controller) must kill them (forcing them to exit
-    # gracefully, if possible).
-    #  def worker_is_done(self, worker_id):
-    #      self._workers.discard(worker_id)
-    #      self._should_stop = True
+    def worker_is_done(self, worker_id):
+        """
+        This method is not supported anymore.
+
+        Rationale
+        ---------
+        1. For supporting multi-node controllers it was necessary to move the
+           spawning of worker process to :class:`Controller` object, so
+           :class:`Controller` needs to wait for the exit of its worker
+           children. This was done for the following reasons:
+
+           * Controller processes may be MPI processes, while worker processes
+              are not.
+           * In multi-node case, worker processes have to be spawned in a
+             another host than the one executing the launcher.
+           * It would be better, if there was a uniform way to spawn worker
+             process which is independent whether we are in the single-node or
+             multi-node case.
+
+        2. Given (1): Each process ought to take care cleaning and exiting
+           gracefully by itself, unless a fatal error has happened or a
+           irrecoverable error for the procedure has happened, in which case
+           process should exit normally with non-success code. In fatal or
+           irrecoverable cases, their parent process (i.e controller) must kill
+           them (forcing them to exit gracefully, if possible).
+
+        .. deprecated:: 0.6.0
+           A worker process should exit normally instead. It is not needed
+           to signal to its controller that it has finished.
+        """
+        self._should_stop = True
 
     def serve(self):
         """This method will handle control messages until an error happens or
@@ -234,7 +276,7 @@ class Controller(object):
                             continue
                         else:
                             # A worker has not terminated normally due to an
-                            # error or an irrecovable fault
+                            # error or an irrecoverable fault
                             raise PlatoonError("A worker has exited with non-success code: {}".format(self._success))
                     else:  # other status changes are not desirable
                         raise PlatoonError("A worker has changed to a status other than exit.")
@@ -243,7 +285,7 @@ class Controller(object):
                 except zmq.Again:  # if a query has not happened, try again
                     continue
                 except zmq.ZMQError as exc:
-                    raise PlatoonError("while receiving using zmq socket", exc)
+                    raise PlatoonError("while receiving using ZMQ socket", exc)
 
                 # try default interface, it may raise PlatoonError
                 response = self._handle_base_control(query['req'],
@@ -257,7 +299,7 @@ class Controller(object):
                 try:
                     self.csocket.send_json(response)
                 except zmq.ZMQError as exc:
-                    raise PlatoonError("while sending using zmq socket", exc)
+                    raise PlatoonError("while sending using ZMQ socket", exc)
         except PlatoonError as exc:  # if platoon fails kill all children workers
             print(exc, file=sys.stderr)
             self._clean()
@@ -272,7 +314,7 @@ class Controller(object):
         return self._success
 
 ################################################################################
-#                   Initialization and Finilization Methods                    #
+#                   Initialization and Finalization Methods                    #
 ################################################################################
 
     def _init_control_socket(self, port):
@@ -284,7 +326,7 @@ class Controller(object):
         Parameters
         ----------
         port : int
-            The port to listen on.
+           The port to listen on.
 
         """
         self.ccontext = zmq.Context()
@@ -292,6 +334,13 @@ class Controller(object):
         self.csocket.bind('tcp://*:{}'.format(port))
 
     def _init_region_comm(self):
+        """
+        If in multi-node, this method will initialize information about MPI
+        controllers.
+
+        .. versionadded:: 0.6.0
+
+        """
         if MPI is None:
             raise AttributeError("mpi4py is not imported")
         MPI.Init()
@@ -306,6 +355,13 @@ class Controller(object):
         self._global_size = sum(self._all_local_size)
 
     def _clean(self):
+        """
+        Helper method used to kill remaining workers and abort MPI job
+        (if we are running in multi-node), in case of error.
+
+        .. versionadded:: 0.6.0
+
+        """
         print("Cleaning up...", file=sys.stderr)
         self._kill_workers()
         if self._multinode and self._region_comm:
@@ -313,6 +369,12 @@ class Controller(object):
             self._region_comm.Abort(errorcode=1)
 
     def _kill_workers(self):
+        """
+        Kills own remaining children, worker processes.
+
+        .. versionadded:: 0.6.0
+
+        """
         while self._workers:
             pid = self._workers.pop()
             print("Killing worker {}...".format(pid), file=sys.stderr)
@@ -328,6 +390,9 @@ class Controller(object):
                 pass
 
     def _close(self):
+        """
+        Closes ZMQ connections, POSIX semaphores and shared memory.
+        """
         print("Closing connections and unlinking memory...", file=sys.stderr)
         self.csocket.close()
         self.ccontext.term()
@@ -346,11 +411,13 @@ class Controller(object):
                 pass
 
     def _handle_force_close(self, signum, frame):
-        """Handle SIGTERM and SIGINT signals from MPI.Abort
+        """Handle SIGTERM and SIGINT signals from MPI.Abort.
 
         This is expected to happen when something abnormal has happened in other
         controllers over MPI.COMM_WORLD across host which participate in the
         multi-node training.
+
+        .. versionadded:: 0.6.0
 
         """
         print("Caught signal {}. Killing workers and closing connections...".format(
@@ -364,11 +431,14 @@ class Controller(object):
 ################################################################################
 
     def _is_worker_first(self, counter):
-        """Returns True, if in a mass request in a local platoon (workers in a
-        single host) a worker's request reaches first its controller
+        """
+        Returns True, if in a mass request in a local platoon (workers in a
+        single host) a worker's request reaches first its controller.
 
-        This will work only if every single worker participates successfully each
-        time in a concurrent request of the same type to their controller.
+        This will work only if every single worker participates successfully
+        each time in a concurrent request of the same type to their controller.
+
+        .. versionadded:: 0.6.0
 
         """
         if self._local_size == 1:
@@ -379,7 +449,52 @@ class Controller(object):
         return False
 
     def _get_platoon_info(self, req_info):
-        first = self._is_worker_first(self._get_platoon_info_count)  # See :ref:`_is_worker_first`
+        r"""
+        Packs information about current Platoon's setup.
+
+        Parameters
+        ----------
+        req_info : dict
+           request info from individual :class:`Worker`.
+
+        Returns
+        -------
+        response : dict
+           response to :class:`Worker`'s request.
+
+        req_info
+        --------
+        * *local_id* : str
+           Id string meant to be unique among :class:`Worker`s in the same host.
+           This one is currently different for each :class:`Worker`. Produced
+           by a NCCL helper function.
+        * *device* : str
+           Theano device identifier, e.g. cuda2.
+
+        response
+        --------
+        * *local_id* : str
+           Id string unique among :class:`Worker`s in the same host. It is used
+           to initialize local NCCL communicator world.
+        * *local_size* : int
+           Number of :class:`Worker`s spawned in requesting :class:`Worker`'s
+           host by :class:`Controller`.
+        * *local_rank* : int
+           Rank of requesting :class:`Worker` in respect to the local NCCL
+           comm world.
+        * *multinode* : bool
+           True, if we are running a multi-node procedure.
+        * *global_size* : int
+           Number of :class:`Worker`s spawned across all hosts by
+           all :class:`Controller`s in total.
+        * *global_rank* : int
+           Rank of requesting :class:`Worker` in respect to :class:`Controller`s'
+           MPI comm world and their :class:`Worker`s' local NCCL comm world.
+
+        .. versionadded:: 0.6.0
+
+        """
+        first = self._is_worker_first(self._get_platoon_info_count)  # See :meth:`_is_worker_first`
         if first:
             self._local_id = "platoon-" + req_info['local_id']
         response = dict()
@@ -396,7 +511,30 @@ class Controller(object):
         return response
 
     def _init_new_shmem(self, req_info):
-        first = self._is_worker_first(self._init_new_shmem_count)  # See :ref:`_is_worker_first`
+        r"""
+        Initiates a POSIX shared memory buffer on a :class:`Worker`'s request
+        which will be accesible to all :class:`Worker`s in a host.
+
+        Parameters
+        ----------
+        req_info : dict
+           Request info from individual :class:`Worker`.
+
+        Returns
+        -------
+        response : str
+           Response to a :class:`Worker`'s request. Contains common reference
+           name to POSIX shared memory.
+
+        req_info
+        --------
+        * *size* : int
+           Shared memory's size in bytes.
+
+        .. versionadded:: 0.6.0
+
+        """
+        first = self._is_worker_first(self._init_new_shmem_count)  # See :meth:`_is_worker_first`
         if first:
             self._last_shmem_name = "platoon-{0}_{1}_buffer".format(self._job_uid,
                                                                     len(self.shared_buffers))
@@ -427,6 +565,31 @@ class Controller(object):
         return self._last_shmem_name
 
     def _all_reduce(self, req_info):
+        r"""
+        Request for an AllReduce collective operation on a shared memory buffer
+        among every nodes' :class:`Controller`s.
+
+        For this operation to be successful it is needed that a :class:`Worker`
+        has written to the shared memory buffer referenced by `shmem`.
+        The result of this operation will be written back to the same buffer.
+
+        Parameters
+        ----------
+        req_info : dict
+           request info from individual :class:`Worker`.
+
+        req_info
+        --------
+        * *dtype* : str
+           Numpy dtype of the shared memory buffer's elements.
+        * *op* : str
+           Reference name of a reduce operation type.
+        * *shmem* : str
+           Reference name to a shared memory buffer.
+
+        .. versionadded:: 0.6.0
+
+        """
         if not self._multinode:
             raise PlatoonError("Request to all_reduce, when multi-node is off.")
         if self._region_comm is None:
@@ -457,9 +620,9 @@ class Controller(object):
         Parameters
         ----------
         port : int
-            The port to listen on.
+           The port to listen on.
         hwm : int
-            High water mark, see the pyzmq docs.
+           High water mark, see the pyzmq docs.
 
         """
         self.acontext = zmq.Context()
@@ -477,8 +640,8 @@ class Controller(object):
         Parameters
         ----------
         arrays : list of ndarrays
-            List of numpy.ndarray to send.  All arrays should be
-            contiguous for better performance.
+           List of :class:`numpy.ndarray` to send.  All arrays should be
+           contiguous for better performance.
 
         """
         # The buffer protocol only works on contiguous arrays
@@ -496,7 +659,25 @@ class Controller(object):
 
     @staticmethod
     def get_workers_devices(devices):
-        # Get Controller's devices
+        """
+        This static method is used by a :class:`Controller` instance to
+        determine which devices should it use in its :class:`Worker`s, in case
+        it is not explicitly given in its arguments.
+
+        :param devices: list of Theano device ids specified in arguments
+
+        .. note::
+           Devices fall to defaults, if they cannot be found with any
+           available Platoon configuration method. Default devices are all CUDA
+           devices in host.
+
+        .. warning::
+           If any devices cannot be inferred at all, process exits.
+
+        .. versionadded:: 0.6.0
+
+        """
+        # Get :class:`Controller`'s devices
         import socket
         hostname = socket.gethostname()
 
@@ -533,6 +714,15 @@ class Controller(object):
 
     @staticmethod
     def default_parser():
+        """
+        Returns base :class:`Controller`'s class parser for its arguments.
+
+        This parser can be augmented with more arguments, if it is needed, in
+        case a class which inherits :class:`Controller` exists.
+
+        .. versionadded:: 0.6.0
+
+        """
         parser = argparse.ArgumentParser(
             description="Base Platoon Controller process. Reigns over a computer node.")
         parser.add_argument('experiment_name', help='The name of your experiment. The launcher will expect to find the files <experiment_name>_worker.py and optionally <experiment_name>_controller.py.')
@@ -553,6 +743,17 @@ class Controller(object):
 
     @staticmethod
     def default_arguments(args):
+        """
+        Static method which returns the correct arguments for a base
+        :class:`Controller` class.
+
+        :param args:
+           Object returned by calling :meth:`argparse.ArgumentParser.parse_args`
+           to a parser returned by :func:`default_parser`.
+
+        .. versionadded:: 0.6.0
+
+        """
         DEFAULT_KEYS = ['control_port', 'data_port', 'data_hwm',
                         'devices', 'experiment_name',
                         'log_directory', 'worker_args', 'multi']
