@@ -41,7 +41,7 @@ class TestController(unittest.TestCase):
         req_info['local_id'] = '1'
         req_info['device'] = 'cuda0'
         res = self.control._get_platoon_info(req_info)
-        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size'])
+        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size', 'global_rank'])
         assert res['local_id'] == "platoon-1"
         assert res['local_size'] == self.local_size
         assert res['local_rank'] == 0
@@ -51,7 +51,7 @@ class TestController(unittest.TestCase):
         req_info['local_id'] = '2'
         req_info['device'] = 'cuda1'
         res = self.control._get_platoon_info(req_info)
-        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size'])
+        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size', 'global_rank'])
         assert res['local_id'] == "platoon-1"
         assert res['local_size'] == self.local_size
         assert res['local_rank'] == 1
@@ -61,7 +61,7 @@ class TestController(unittest.TestCase):
         req_info['local_id'] = '3'
         req_info['device'] = 'cuda2'
         res = self.control._get_platoon_info(req_info)
-        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size'])
+        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size', 'global_rank'])
         assert res['local_id'] == "platoon-1"
         assert res['local_size'] == self.local_size
         assert res['local_rank'] == 2
@@ -71,7 +71,7 @@ class TestController(unittest.TestCase):
         req_info['local_id'] = 'asdfasfda'
         req_info['device'] = 'cuda1'
         res = self.control._get_platoon_info(req_info)
-        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size'])
+        assert set(res.keys()) == set(['local_id', 'local_size', 'local_rank', 'multinode', 'global_size', 'global_rank'])
         assert res['local_id'] == "platoon-asdfasfda"
         assert res['local_size'] == self.local_size
         assert res['local_rank'] == 1
