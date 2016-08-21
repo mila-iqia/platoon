@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+"""
+:mod:`util` -- Common utility functions for Platoon's classes
+=============================================================
+
+.. module:: util
+   :platform: Unix
+   :synopsis: Contains PlatoonException classes and various helpers.
+
+"""
 from __future__ import print_function
 import os
 import sys
@@ -30,20 +40,26 @@ class PlatoonException(Exception):
 
 
 class PlatoonError(PlatoonException):
-    """Exception used for errors related to Platoon.
+    """
+    Exception used for errors related to Platoon.
     """
     def __init__(self, descr, from_exc=None):
         super(PlatoonError, self).__init__("ERROR", descr, from_exc)
 
 
 class PlatoonWarning(PlatoonException):
-    """Exception used for warnings related to Platoon.
+    """
+    Exception used for warnings related to Platoon.
     """
     def __init__(self, descr, from_exc=None):
         super(PlatoonWarning, self).__init__("WARNING", descr, from_exc)
 
 
 def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
+    """
+    Map file descriptor or shared memory buffer to virtual address space of this
+    process and create an object with Python buffer interface for that address.
+    """
     _ffi = cffi.FFI()
     _ffi.cdef("void *mmap(void *, size_t, int, int, int, size_t);")
     _lib = _ffi.dlopen(None)
@@ -56,7 +72,11 @@ def mmap(length=0, prot=0x3, flags=0x1, fd=0, offset=0):
     return _ffi.buffer(m, length)
 
 
-def launch_process(logs_folder, experiment_name, args, device, process_type="worker"):
+def launch_process(logs_folder, experiment_name, args, device,
+                   process_type="worker"):
+    """
+    Helper function for a Platoon subprocess.
+    """
     print("## Starting {0} on {1} ...".format(process_type, device), end=' ')
 
     log_file = os.path.join(logs_folder, "{0}_{1}.{{}}".format(process_type, device))
@@ -111,6 +131,10 @@ if MPI:
 
 
 def op_to_mpi(op):
+    """
+    Converts pygpu collective reduce operation types to MPI reduce operation
+    types.
+    """
     if MPI is None:
         raise AttributeError("mpi4py is not imported")
     res = GA_TO_MPI_OP.get(op.lower())
@@ -120,6 +144,9 @@ def op_to_mpi(op):
 
 
 def dtype_to_mpi(dtype):
+    """
+    Converts numpy datatypes to MPI datatypes.
+    """
     if MPI is None:
         raise AttributeError("mpi4py is not imported")
     res = NP_TO_MPI_TYPE.get(np.dtype(dtype))
@@ -129,6 +156,9 @@ def dtype_to_mpi(dtype):
 
 
 class SingletonType(type):
+    """
+    Metaclass that implements the singleton pattern for a Python class.
+    """
     def __init__(cls, name, bases, dict):
         super(SingletonType, cls).__init__(name, bases, dict)
         cls.instance = None
