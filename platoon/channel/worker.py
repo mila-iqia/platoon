@@ -1,4 +1,34 @@
 # -*- coding: utf-8 -*-
+"""
+:mod:`channel.worker` -- Multi-device sync API for a single computation device
+==============================================================================
+
+.. module:: worker
+   :platform: Unix
+   :synopsis: Provide methods for single device Theano code that enable
+              homogeneous operations across multiple devices.
+
+Contains :class:`Worker` which provides Platoon's basic API for multi-device
+operations. Upon creation, a Worker will initiate connections with its node's
+:class:`Controller` process (ZMQ) and get access to intra-node lock. A worker
+process is meant to have only one Worker instance to manage a corresponding
+computation device, e.g. GPU. Thus, Worker is a singleton class.
+
+Worker's available API depends on available backend frameworks. Currently, there
+are two ways to use a Worker for global operations on parameters:
+
+   1. Through :meth:`Worker.sync_params`, which is its default interface.
+   2. Or :meth:`Worker.all_reduce` which is a multi-node/GPU collective
+      operation.
+
+For detailed information about these methods please check their corresponding
+documentation, as well as the brief table which compares the two in project's
+:file:`README.md`.
+
+Worker also has :meth:`Worker.recv_mb` interface for collecting mini-batches to
+work on from Controller.
+
+"""
 from __future__ import absolute_import, print_function
 import os
 import sys
@@ -19,13 +49,6 @@ except ImportError:
 
 from ..util import (mmap, PlatoonError, PlatoonWarning, SingletonType)
 
-
-# You need:
-# $ conda install pyzmq cffi
-# $ pip install posix_ipc
-
-# Also this was only tested in python 2.7
-
 if six.PY3:
     buffer_ = memoryview
 else:
@@ -35,32 +58,35 @@ else:
 @six.add_metaclass(SingletonType)
 class Worker(object):
     """
-    Worker object. Each worker should have one instance of this class.
+    Interface for multi-device operations.
 
-    This class handles the communication/synchronization with other processes.
+    This class handles communication/synchronization with other processes.
     The features to do so (control channel, mini-batch channel and shared
     parameters) are all independent and optional so you don't have to use all
     of them.
 
     Parameters
     ----------
-    port : int, optional
-        Will call :meth:`init_mb_sock` with this port.
     control_port : int
-        Will call :meth:`_init_control_socket` with this port.
-    socket_timeout : int
-        Timeout in ms for both sockets. Default: 5 min
-    hwm : int
-        High water mark (see pyzmq docs).
+       The tcp port number for control (ZMQ).
+    port : int, optional
+       The tcp port number for data (ZMQ).
+    socket_timeout : int, optional
+       Timeout in ms for both control and data sockets. Default: 5 min
+    hwm : int, optional
+       High water mark (see pyzmq docs) for data transfer.
 
     Attributes
     ----------
-    params : list of ndarrays
-        This will have numpy ndarray in the same order as params_descr.
-        These arrays are backed by shared memory.
+    shared_params : list of :class:`numpy.ndarray`
+       This will have `numpy.ndarray` in the same order as `params_descr`
+       (see :meth:`init_shared_params`). These arrays are backed by shared
+       memory. Used by :meth:`sync_params` interface.
+    shared_arrays : dict of str to :class:`numpy.ndarray`
+       Maps size in bytes to a ndarray in shared memory. Needed in multi-node
+       operations. Used by :meth:`all_reduce` interface.
 
     """
-
     def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
         self.context = zmq.Context()
 
@@ -95,19 +121,21 @@ class Worker(object):
 
     def send_req(self, req, info=None):
         """
-        Send a control request.
+        Sends a control request to node's :class:`Controller`.
 
         Parameters
         ----------
         req : object
-            This is a json-encodable object that will be sent to the
-            Controller.
-        info : object
+           Json-encodable object (usually Python string) that represents the
+           type of request being sent to Controller.
+        info : object, optional
+           Json-encodable object used as input for this Worker's request to
+           Controller.
 
         Returns
         -------
         object
-            Json-decoded object
+           Json-decoded object.
 
         """
         query = {'worker_id': self._worker_id, 'req': req, 'req_info': info}
@@ -121,65 +149,66 @@ class Worker(object):
 
     def lock(self, timeout=None):
         """
-        Acquire the lock across all workers.
+        Acquire intra-node lock.
 
-        This is advisory and does not prevent concurrent access.
-        Subtracts 1 in underlying semaphore. Blocks at 0. Begins at 1.
+        This is advisory and does not prevent concurrent access. This method
+        will subtracts 1 in underlying POSIX semaphore, will block the rest
+        calls at 0. The underlying semaphore, :attr:`_lock`, starts at 1.
 
         Parameters
         ----------
-        timeout : int
-            Amount of time to wait for the lock to be available.  A
-            timeout of 0 will raise an error immediately if the lock is
-            not available.
+        timeout : int, optional
+           Amount of time to wait for the lock to be available. A timeout of 0
+           will raise an error immediately if the lock is not available.
+           Default: None, which will block until the lock is released.
 
         .. versionchanged:: 0.6.0
-            This method used to be called `lock_params`.
+           This method used to be called `lock_params`.
 
         """
         self._lock.acquire(timeout)
 
     def unlock(self):
         """
-        Release the lock across all workers.
+        Release intra-node lock.
 
         The current implementation does not ensure that the process
-        that locked the params is the one that unlocks them. It also
-        does not prevent one process from unlocking more than once
-        (which will allow more than one process to hold the lock). Adds 1 in
-        underlying semaphore.
+        that locked :attr:`shared_params` is also the one that unlocks them.
+        It also does not prevent one process from unlocking more than once
+        (which will allow more than one process to hold the lock). This method
+        will add 1 in underlying POSIX semaphore, :attr:`_lock`.
 
         Make sure you follow proper lock/unlock logic in your program
         to avoid these problems.
 
         .. versionchanged:: 0.6.0
-            This method used to be called `unlock_params`.
+           This method used to be called `unlock_params`.
 
         """
         self._lock.release()
 
     @property
     def local_size(self):
-        "Number of workers assigned to local host's controller"
+        "Number of workers assigned to local host's controller."
         return self._local_size
 
     @property
     def local_rank(self):
-        "Worker's rank in respect to local host's controller"
+        "Worker's rank in respect to local host's controller (NCCL comm world)."
         return self._local_rank
 
     @property
     def global_size(self):
-        "Number of workers spawned across all hosts in total"
+        "Number of workers spawned across all hosts in total."
         return self._global_size
 
     @property
     def global_rank(self):
-        "Worker's rank in respect to all hosts' controllers in total"
+        "Worker's rank in respect to all hosts' controllers in total."
         return self._global_rank
 
 ################################################################################
-#                   Initialization and Finilization Methods                    #
+#                   Initialization and Finalization Methods                    #
 ################################################################################
 
     def _handle_force_close(self, signum, frame):
@@ -188,11 +217,16 @@ class Worker(object):
         This is expected to happen when something abnormal has happened in other
         workers which implies that training procedure should stop and fail.
 
+        .. versionadded:: 0.6.0
+
         """
         self.close()
         sys.exit(1)  # Exit normally with non success value.
 
     def close(self):
+        """
+        Closes ZMQ connections, POSIX semaphores and shared memory.
+        """
         print("Closing connections and unlinking memory...", file=sys.stderr)
         if hasattr(self, 'asocket'):
             self.asocket.close()
@@ -216,6 +250,23 @@ class Worker(object):
                 pass
 
     def _register_to_platoon(self):
+        """
+        Asks Controller for configuration information and creates a NCCL
+        communicator that participate in the local node's workers world.
+
+        For this it is needed that Theano is imported. Through Theano, this
+        methods gets access to the single GPU context of this worker process.
+        This context is to be used in all computations done by a worker's
+        process.
+
+        .. note::
+           It is necessary that this initialization method is called
+           successfully before :meth:`all_reduce` in order to be available
+           and functional.
+
+        .. versionadded:: 0.6.0
+
+        """
         if pygpu:
             self.ctx_name = None
             self.gpuctx = theanoga.get_context(self.ctx_name)
@@ -239,16 +290,17 @@ class Worker(object):
 
     def init_mb_sock(self, port, hwm=10):
         """
-        Initialize the mini-batch socket.
-
-        This must be called before using :meth:`recv_mb`.
+        Initialize the mini-batch data socket.
 
         Parameters
         ----------
         port : int
-            The port to reach the mini-batch server on.
-        hwm : int
-            High water mark, see pyzmq docs.
+           The tcp port to reach the mini-batch server on.
+        hwm : int, optional
+           High water mark, see pyzmq docs.
+
+        .. note::
+           This must be called before using :meth:`recv_mb`.
 
         """
         self.asocket = self.context.socket(zmq.PULL)
@@ -263,12 +315,13 @@ class Worker(object):
         """
         Initialize control socket.
 
-        This must be called before using :meth:`send_req`.
-
         Parameters
         ---------
         port : int
-            Port where the control master is listening on.
+          The tcp port where the control master is listening at.
+
+        .. note::
+           This must be called before using :meth:`send_req`.
 
         """
         self.csocket = self.context.socket(zmq.REQ)
@@ -283,31 +336,48 @@ class Worker(object):
 ################################################################################
 
     def shared(self, array):
-        """Creates a new posix shared memory buffer to be shared among Workers
+        """Creates a new POSIX shared memory buffer to be shared among Workers
         and their Controller and maps the size of `array` to that buffer.
 
         Controller is requested to create a new shared memory buffer with the
         same size as `array` in order to be used in multi-node/gpu platoon
-        collective operations through the new worker interface. All participants
-        in a host have access to that memory.
+        collective operations through :meth:`all_reduce` interface. All
+        participants in the same node have access to that memory.
 
-        :param array: will correspond to shared buffer in host with the same size
+        :param array: This array's size in bytes will be mapped to a shared
+                      memory buffer in host with the same size.
         :type array: :ref:`pygpu.gpuarray.GpuArray`
+
+        Returns
+        -------
+        shared_array : :ref:`numpy.ndarray`
+           A newly created shared memory buffer with the same size or an already
+           allocated one.
 
         Notes
         -----
-        For internals: There should probably be a barrier across hosts' worker
-        here to ensure that so far, controller has serviced all workers (if
-        needed) a new shared memory's name. This is due to the fact that
+        *For internal implementation*: There should probably be a barrier across
+        nodes' Workers to ensure that, so far, each Controller has serviced
+        a new shared memory's name to all Workers. This is due to the fact that
         Controller can service one Worker at a time and a platoon collective
         service is a blocking one across Controllers. Current implementation
-        is valid because calls to pygpu.collectives interface are synchronous
+        is valid because calls to `pygpu.collectives` interface are synchronous
         across workers.
+
+        .. versionadded:: 0.6.0
 
         """
         if not isinstance(array, pygpu.gpuarray.GpuArray):
             raise TypeError("`array` input is not pygpu.gpuarray.GpuArray.")
 
+        # This is not a problem, unless we have concurrent calls in
+        # :meth:`all_reduce` in the same worker-process and we are running in
+        # multi-node. This due to the fact that :attr:`shared_arrays` are being
+        # used as temporary buffers for the internal inter-node MPI collective
+        # operation. We only need a shared buffer with Controller in order to
+        # execute multi-node operation, so a mapping with size in bytes
+        # suffices. See:
+        # https://github.com/mila-udem/platoon/pull/66#discussion_r74988680
         bytesize = array.size * array.itemsize
 
         if bytesize in self.shared_arrays:
@@ -339,35 +409,32 @@ class Worker(object):
             return shared_array
 
     def all_reduce(self, src, op, dest=None):
-        """AllReduce collective operation for workers in a multi-node/gpu platoon.
+        """
+        AllReduce collective operation for workers in a multi-node/GPU Platoon.
 
         Parameters
         ----------
-        src: :ref:`pygpu.gpuarray.GpuArray`
-            Array to be reduced.
-        op: string
-            Key indicating operation type. See :ref:`pygpu.collectives.TO_RED_OP`
-        dest: :ref:`pygpu.gpuarray.GpuArray`, optional
-            Array to collect reduce operation result.
+        src : :ref:`pygpu.gpuarray.GpuArray`
+           Array to be reduced.
+        op : str
+           Reference name to reduce operation type.
+           See :ref:`pygpu.collectives.TO_RED_OP`.
+        dest : :ref:`pygpu.gpuarray.GpuArray`, optional
+           Array to collect reduce operation result.
 
         Returns
         -------
         result: None or :ref:`pygpu.gpuarray.GpuArray`
-            New Theano gpu shared variable which contains operation result
-            if `dest` is None, else nothing.
+           New Theano gpu shared variable which contains operation result
+           if `dest` is None, else nothing.
 
-        Warning
-        -------
-        Repeated unnecessary calls with no `dest`, where a logically valid
-        Theano gpu shared variable exists, leads to poorly performing code.
+        .. warning::
+           Repeated unnecessary calls with no `dest`, where a logically valid
+           pygpu GpuArray exists, should be avoided for optimal performance.
 
-        Notes
-        -----
-        Workers are expected to make homogenous calls to this API. It will
-        not work currently for heterogenous calls.
+        .. versionadded:: 0.6.0
 
         """
-
         if self._local_comm is None:
             raise PlatoonError("`all_reduce` interface is not available. Check log.")
 
@@ -434,13 +501,12 @@ class Worker(object):
 
         Parameters
         ----------
-        params : shared variables
-            Theano shared variables representing the weights of your model.
-        param_sync_rule : ParamSyncRule
-            Update rule for the parameters
+        params : list of :ref:`theano.compile.SharedVariable`
+           Theano shared variables representing the weights of your model.
+        param_sync_rule : :class:`param_sync.ParamSyncRule`
+           Update rule for the parameters
 
         """
-
         self.update_fn = param_sync_rule.make_update_function(params)
         self.local_params = params
 
@@ -492,8 +558,8 @@ class Worker(object):
         Parameters
         ----------
         synchronous : bool
-            If false, the lock won't be acquired before touching the
-            shared weights.
+           If false, the lock won't be acquired before touching the
+           shared weights.
 
         """
         if synchronous:
@@ -511,8 +577,8 @@ class Worker(object):
         Parameters
         ----------
         synchronous : bool
-            If False, the lock won't be acquired before touching the
-            shared weights.
+           If False, the lock won't be acquired before touching the
+           shared weights.
 
         """
         if synchronous:
@@ -531,8 +597,8 @@ class Worker(object):
         Parameters
         ----------
         synchronous : bool
-            If False, the lock won't be acquired before touching the
-            shared weights.
+           If False, the lock won't be acquired before touching the
+           shared weights.
 
         """
         if synchronous:
@@ -557,7 +623,7 @@ class Worker(object):
         Returns
         -------
         list
-            The list of numpy arrays for the mini-batch
+           The list of numpy arrays for the mini-batch
 
         """
         socks = dict(self.apoller.poll(self._socket_timeout))

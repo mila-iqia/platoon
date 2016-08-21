@@ -10,14 +10,15 @@
 
 Contains :class:`Controller` and helper functions to spawn an instance of this
 class. Upon creation, a Controller will initiate connections (ZMQ and possibly
-MPI), setup intra-node locks and spawn worker processes as its children,
+MPI), setup intra-node lock and spawn worker processes as its children,
 according to the given arguments and/or configuration.
 
 This file can also be executed, spawning a Controller instance and making
 serve until all of its children processes exit or an error occurs. It will be
-executed in a separate process as a default by :file:`platoon-launcher`, if user
-has not provided another executable (by the name '<experiment>_controller.py')
-which will spawn base :class:`Controller` or a decedent class.
+executed in a separate process as a default by :file:`script/platoon-launcher`,
+if user has not provided another executable (by the name
+'<experiment>_controller.py') which will spawn base :class:`Controller` or a
+decedent class.
 
 """
 from __future__ import absolute_import, print_function
@@ -48,7 +49,7 @@ from ..util import (PlatoonError, mmap, launch_process,
 
 class Controller(object):
     """
-    General multi-process controller
+    General multi-process controller.
 
     This class provides the necessary features to dispatch data mini-batches
     to workers and handle control requests.
@@ -64,11 +65,11 @@ class Controller(object):
     Parameters
     ----------
     control_port : int, optional
-       The control port number.
+       The tcp port number for control (ZMQ).
     data_port : int, optional
-       The data port number.
+       The tcp port number for data (ZMQ).
     data_hwm : int, optional
-       High water mark (see pyzmq docs).
+       High water mark (see pyzmq docs) for data transfer.
     devices : list of strings, optional
        Contains device names in clique order (prefer ring topology).
     experiment_name : str, optional
@@ -82,7 +83,6 @@ class Controller(object):
        True, if we start a multi-node experiment. Flag to start MPI.
 
     """
-
     def __init__(self, control_port=5567, data_port=None, data_hwm=10,
                  devices=None, experiment_name='',
                  log_directory='', worker_args='', multi=False):
@@ -449,7 +449,7 @@ class Controller(object):
         return False
 
     def _get_platoon_info(self, req_info):
-        r"""
+        """
         Packs information about current Platoon's setup.
 
         Parameters
@@ -511,7 +511,7 @@ class Controller(object):
         return response
 
     def _init_new_shmem(self, req_info):
-        r"""
+        """
         Initiates a POSIX shared memory buffer on a :class:`Worker`'s request
         which will be accesible to all :class:`Worker`s in a host.
 
@@ -565,7 +565,7 @@ class Controller(object):
         return self._last_shmem_name
 
     def _all_reduce(self, req_info):
-        r"""
+        """
         Request for an AllReduce collective operation on a shared memory buffer
         among every nodes' :class:`Controller`s.
 
