@@ -27,9 +27,12 @@ from platoon.param_sync import EASGD
 
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
 
+worker = Worker(control_port=5567)
 # Set the random number generators' seeds for consistency
+# Each worker **MUST** be seeded with a different number, so that
+# they do not draw the same minibatches!
 SEED = 123
-numpy.random.seed(SEED)
+numpy.random.seed(SEED + worker.global_rank)
 
 
 def numpy_floatX(data):
@@ -479,9 +482,8 @@ def train_lstm(
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
     valid_sync=False,
+    param_sync_api=False
 ):
-
-    worker = Worker(control_port=5567)
 
     # Model options
     model_options = locals().copy()
@@ -519,7 +521,16 @@ def train_lstm(
     tparams = init_tparams(params)
 
     list_tparams = list(tparams.values())
-    worker.init_shared_params(list_tparams, param_sync_rule=EASGD(0.5))
+    if param_sync_api:
+        print("Using param_sync worker's interface!")
+        worker.init_shared_params(list_tparams, param_sync_rule=EASGD(0.5))
+    else:
+        print("Using all_reduce worker's interface!")
+        from platoon.training import global_dynamics as gd
+        cparams = init_tparams(params)
+        list_cparams = list(cparams.values())
+        easgd = gd.EASGD(worker)
+        easgd.make_rule(list_tparams, list_cparams, 0.5)
     print("Params init done")
 
     # use_noise is for dropout
@@ -561,7 +572,8 @@ def train_lstm(
     best_p = None
 
     # Making sure that the worker start training with the most recent params
-    worker.copy_to_local()
+    if param_sync_api:
+        worker.copy_to_local()
 
     while True:
         step = worker.send_req('next')
@@ -577,7 +589,10 @@ def train_lstm(
             step = worker.send_req('done', {'train_len': train_len})
 
             print("Syncing with global params")
-            worker.sync_params(synchronous=True)
+            if param_sync_api:
+                worker.sync_params(synchronous=True)
+            else:
+                easgd()
 
         """
         if step.startswith('save '):
@@ -590,7 +605,7 @@ def train_lstm(
         """
 
         if step == 'valid':
-            if valid_sync:
+            if param_sync_api and valid_sync:
                 worker.copy_to_local()
             use_noise.set_value(numpy_floatX(0.))
             valid_err = pred_error(f_pred, prepare_data, valid,
@@ -604,7 +619,7 @@ def train_lstm(
 
             print(('Valid ', valid_err,
                    'Test ', test_err))
-            if valid_sync:
+            if param_sync_api and valid_sync:
                 worker.copy_to_local()
 
         if step == 'stop':
@@ -642,6 +657,8 @@ if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
+    parser.add_argument('--param-sync-api', action='store_true', default=False)
     args = parser.parse_args()
 
-    train_lstm(valid_sync=args.valid_sync, test_size=500)
+    train_lstm(valid_sync=args.valid_sync, test_size=500,
+               param_sync_api=args.param_sync_api)
