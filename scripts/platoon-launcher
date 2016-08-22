@@ -163,7 +163,7 @@ if __name__ == '__main__':
         if args.controller_args:
             controller_args += shlex.split(args.controller_args)
         if args.worker_args:
-            controller_args += ["-w", args.worker_args]
+            controller_args += ["-w={}".format(args.worker_args)]
         try:
             p = launch_process(logs_folder, controller_type, controller_args, "cpu", "controller")
         except OSError as exc:
