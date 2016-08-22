@@ -56,7 +56,7 @@ directory to learn about every way that Platoon can be configured.
 
 If single-node is explicitly specified through command-line arguments, the
 specified devices will be used in the GPU communicator world in the order they
-are parsed. The same thing applies also for lists of devices found in platoon
+are parsed. The same thing applies also for lists of devices found in Platoon
 environmentals or configuration files.
 
 e.g. usage: platoon-launcher lstm -D cuda0 cuda3 (explicit config)
@@ -192,7 +192,7 @@ if __name__ == '__main__':
                 print("\nERROR! An error has occured.\nSee logs for more info.")
                 sys.exit(1)
             else:
-                print("\nSUCCESS! Training with platoon has finished.")
+                print("\nSUCCESS! Training with Platoon has finished.")
         else:
             print("\nWARNING! {} changed status but has not exited.".format(experiment_type))
             raise RuntimeError("ERROR! Unexpected controller status change.")

@@ -1,3 +1,14 @@
+# -*- coding: utf-8 -*-
+"""
+:mod:`ops` -- Theano Ops for Worker interface
+=============================================
+
+.. module:: ops
+   :platform: Unix
+   :synopsis: Contains AllReduce Theano Op and builder function for each
+              reduce operation type.
+
+"""
 from __future__ import absolute_import, print_function
 import sys
 
@@ -16,6 +27,23 @@ from .channel.worker import Worker
 
 if theano:
     class AllReduce(theano.Op):
+        """Wrapper of :class:`channel.worker.Worker`.
+
+        For full documentation, see builder functions:
+           * :func:`AllReduceSum`
+           * :func:`AllReduceProd`
+           * :func:`AllReduceMax`
+           * :func:`AllReduceMin`
+
+        :param scalar_op: Representation of collective reduce operation type.
+        :type scalar_op: {str, :ref:`theano.scalar.add`, :ref:`theano.scalar.mul`,
+                          :ref:`theano.scalar.maximum`, :ref:`theano.scalar.minimum`}
+
+        .. seealso:: module :mod:`channel.worker`
+
+        .. versionadded:: 0.6.0
+
+        """
         __props__ = ("scalar_op", )
 
         def __init__(self, scalar_op, inplace=False, worker=None):
@@ -80,15 +108,95 @@ if theano:
             return [grad_not_implemented(self, i, inputs[i]) for i in xrange(len(inputs))]
 
     def AllReduceSum(src, dest=None, inplace=False, worker=None):
+        """
+        Element-wise sum  of `src` GPU tensor across all
+        Platoon worker processes.
+
+        Parameters
+        ----------
+        src : GPU tensor (array-like)
+           Input array.
+        dest : GPU tensor (array-like), optional
+           Output array. If None (default) is given, then an GPU array-like
+           will be returned with result, which has the same shape and datatype
+           as `src`.
+        inplace : bool, optional
+           If True, then operation will happen inplace and the result will be
+           written in array `src`.
+        worker : :class:`channel.worker.Worker`, optional
+           Platoon Worker instance unique to a single process which will be used
+           to execute the operation. If None (default) is given, the singleton
+           instance will be used.
+
+        Returns
+        -------
+        result : GPU tensor (array-like)
+           Result array will be `dest` if it was specified in the arguments,
+           `src` if `inplace` is True, else a new variable which points to
+           operation's result.
+
+        Notes
+        -----
+        * If `dest` is given, then the Op is inplace in Theano sense.
+        * If a `worker` is not given, then a Worker instance must have been
+          already instantiated.
+
+        Raises
+        ------
+        TypeError
+           If `worker` specified is not of type :class:`channel.worker.Worker`
+           or if `src` and `dest` are not of the same Theano Type.
+        AttributeError
+           If singleton Worker has not been instantiated yet.
+
+        .. versionadded:: 0.6.0
+
+        """
         return AllReduce(theano.scalar.add, inplace, worker)(src, dest)
 
     def AllReduceProd(src, dest=None, inplace=False, worker=None):
+        """
+        Element-wise multiplication of `src` GPU tensor across all
+        Platoon worker processes.
+
+        .. seealso::
+           Function :func:`AllReduceSum`
+              For documentation on parameters, return variables, notes and
+              raises.
+
+        .. versionadded:: 0.6.0
+
+        """
         return AllReduce(theano.scalar.mul, inplace, worker)(src, dest)
 
     def AllReduceMax(src, dest=None, inplace=False, worker=None):
+        """
+        Find element-wise maximum of `src` GPU tensor across all
+        Platoon worker processes.
+
+        .. seealso::
+           Function :func:`AllReduceSum`
+              For documentation on parameters, return variables, notes and
+              raises.
+
+        .. versionadded:: 0.6.0
+
+        """
         return AllReduce(theano.scalar.maximum, inplace, worker)(src, dest)
 
     def AllReduceMin(src, dest=None, inplace=False, worker=None):
+        """
+        Find element-wise minimum of `src` GPU tensor across all
+        Platoon worker processes.
+
+        .. seealso::
+           Function :func:`AllReduceSum`
+              For documentation on parameters, return variables, notes and
+              raises.
+
+        .. versionadded:: 0.6.0
+
+        """
         return AllReduce(theano.scalar.minimum, inplace, worker)(src, dest)
 else:
     AllReduce = None

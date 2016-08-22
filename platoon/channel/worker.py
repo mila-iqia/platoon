@@ -340,7 +340,7 @@ class Worker(object):
         and their Controller and maps the size of `array` to that buffer.
 
         Controller is requested to create a new shared memory buffer with the
-        same size as `array` in order to be used in multi-node/gpu platoon
+        same size as `array` in order to be used in multi-GPU/node Platoon
         collective operations through :meth:`all_reduce` interface. All
         participants in the same node have access to that memory.
 
@@ -359,7 +359,7 @@ class Worker(object):
         *For internal implementation*: There should probably be a barrier across
         nodes' Workers to ensure that, so far, each Controller has serviced
         a new shared memory's name to all Workers. This is due to the fact that
-        Controller can service one Worker at a time and a platoon collective
+        Controller can service one Worker at a time and a Platoon collective
         service is a blocking one across Controllers. Current implementation
         is valid because calls to `pygpu.collectives` interface are synchronous
         across workers.

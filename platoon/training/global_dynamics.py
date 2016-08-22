@@ -1,4 +1,23 @@
 # -*- coding: utf-8 -*-
+"""
+:mod:`training.global_dynamics` -- Collection of global SGD strategies
+======================================================================
+
+.. module:: global_dynamics
+   :platform: Unix
+   :synopsis: Contains :class:`GlobalDynamics` base class for synchronous
+              global gradient descents and implementation of various techniques
+              using Platoon's :class:`channel.worker.Worker`'s
+              :meth:`channel.worker.Worker.all_reduce` interface.
+
+Implementations
+---------------
+* *:class:`SGD`* : Synchronous variant of Stochastic Gradient Descent for many
+                   descending particles.
+* *:class:`EASGD`* : Elastic Averaging Stochastic Gradient Descent (synchronous)
+* *:class:`Downpour`* : A synchronous variant of Downpour
+
+"""
 from __future__ import absolute_import, division
 
 from ..channel.worker import Worker
@@ -11,8 +30,10 @@ class GlobalDynamics(object):
 
     Parameters
     ----------
-    worker : :ref:`platoon.channel.Worker`, optional
-        A reference to Worker's instance (which is currently singleton)
+    worker : :class:`channel.Worker`, optional
+       A reference to Worker's instance
+
+    .. versionadded:: 0.6.0
 
     """
     def __init__(self, worker=None):
@@ -48,14 +69,16 @@ class GlobalDynamics(object):
 
     def register_fn(self, fun):
         """Internal function implementing global dynamics. Does not accept
-        parameters. Global optimization must be done though shared variables.
+        parameters. Global optimization must be done through shared variables.
 
-        Supplying your own internal function is your responsibility. It must be
-        able to be called like this: `fun()`. Also in order to serve its purpose,
-        it needs to have multi-gpu or even multi-node functionality. As a result,
-        a platoon.Worker or other interface need to be used.
+        The responsibility for supplying a valid internal function falls to the
+        user. It must be able to be called like this: ``fun()``. Also in order
+        to serve its purpose, it needs to have multi-GPU or even multi-node
+        functionality. As a result, a :class:`channel.Worker` or other interface
+        need to be used.
 
-        :param fun: Implements global dynamics by using information from many workers
+        :param fun: Implements global dynamics by using information
+                    from many workers.
         :type fun: callable
 
         """
@@ -64,12 +87,26 @@ class GlobalDynamics(object):
         self._fn = fun
 
     def make_rule(self, *args):
-        """Create GlobalDynamics optimization function for local data in `args`.
+        """
+        Create :class:`GlobalDynamics` optimization function for
+        local data in `args`.
 
         Implementation in a child class must return a callable object which
         expects no arguments. User must be careful to create a function which
         uses shared objects in order to update local model parameters, such as
         Theano Shared Variables.
+
+        Notes
+        -----
+        For better performance, try to batch together in the same
+        :ref:`theano.compile.SharedVariable` as many model parameter arrays as
+        possible. This reduces the number of calls and utilizes the most out of
+        the underlying algorithms. One way to do this is to create one c
+        contiguous array that contains every set (matrix) of model parameters
+        along the first dimension. Then in order to use each set separately,
+        create as many view arrays as the number of sets of model parameters,
+        i.e. the length of the first dimension. Use the whole array as an input
+        to the :meth:`make_rule` function!
 
         """
         raise NotImplementedError(self.make_rule.__doc__)
@@ -91,10 +128,12 @@ class SGD(_GlobalDynamicsNoSet):
     Parameters
     ----------
     average : bool, optional
-        If True, it will normalize the summation of model param updates across
-        all workers with the number of workers participating in optimization.
-    worker : :ref:`platoon.channel.Worker`
-        See :class:`GlobalDynamics`.
+       If True, it will normalize the summation of model param updates across
+       all workers with the number of workers participating in optimization.
+    worker : :class:`channel.Worker`
+       See :class:`GlobalDynamics`.
+
+    .. versionadded:: 0.6.0
 
     """
     def __init__(self, average=False, worker=None):
@@ -106,19 +145,12 @@ class SGD(_GlobalDynamicsNoSet):
 
         Parameters
         ----------
-        local_updates: {theano.SharedVariable, list of theano.SharedVariable}
-            These variables represent the updates found
-            by local optimization dynamics on the model's parameters.
+        local_updates : {:ref:`theano.compile.SharedVariable`,
+                         list of :ref:`theano.compile.SharedVariable`}
+           These variables represent the updates found
+           by local optimization dynamics on the model's parameters.
 
-        .. note::
-            For better performance, try to batch together in the same theano.SharedVariable
-            as many model parameter arrays as possible. This reduces the number of calls
-            and utilizes inlying algorithms the most. One way to do this is to create
-            one c contiguous array that contains every set (matrix) of model parameters
-            along the first dimension. Then in order to use each set separately,
-            create as many view arrays as the number of sets of model parameters,
-            i.e. the length of the first dimension. Use the whole array as an input
-            to the GlobalDynamics.make_rule function!
+        .. seealso:: Notes on :meth:`GlobalDynamics.make_rule`
 
         """
         import theano
@@ -138,9 +170,8 @@ class SGD(_GlobalDynamicsNoSet):
 def SumSGD(worker=None):
     """Synchronous Stochastic Gradient Descent: summing version
 
-    See Also
-    --------
-    :ref:`SGD`
+    .. seealso:: Class :class:`SGD`
+    .. versionadded:: 0.6.0
 
     """
     return SGD(average=False, worker=worker)
@@ -149,47 +180,48 @@ def SumSGD(worker=None):
 def AverageSGD(worker=None):
     """Synchronous Stochastic Gradient Descent: averaging version
 
-    See Also
-    --------
-    :ref:`SGD`
+    .. seealso:: Class :class:`SGD`
+    .. versionadded:: 0.6.0
 
     """
     return SGD(average=True, worker=worker)
 
 
 class EASGD(_GlobalDynamicsNoSet):
-    """Synchronous Elastic Averaging Gradient Descent
+    """Synchronous variant of Elastic Averaging Stochastic Gradient Descent
 
     This algorithm is described in more details in the following paper:
     http://arxiv.org/abs/1412.6651
+
+    .. seealso:: Class :class:`GlobalDynamics` for parameters
+    .. versionadded:: 0.6.0
 
     """
     def make_rule(self, local_particle, central_particle, alpha):
         """Make EASGD rule.
 
-        According to this rule, every N iterations, a worker synchronises his
+        According to this rule, every N iterations, a worker synchronizes his
         parameters with the master parameters. This is done by moving each set of
         parameters toward the other by an amount proportional to the difference
-        between the individual params (this proportion is parametrized by `alpha`).
-
-        The sync equations are as follow:
-        diff = w_worker - w_master
-        w_worker = w_worker - alpha * diff
-        w_master = w_master + alpha * diff
+        between the individual params (this proportion is parameterized by `alpha`).
 
         Parameters
         ----------
-        local_particle: {theano.SharedVariable, list of theano.SharedVariable}
-            A particle's position in parameter space doing local SGD.
-        central_particle: {theano.SharedVariable, list of theano.SharedVariable}
-            Central particle's position in parameter space interacting with
-            local particles.
-        alpha: scalar (theano.SharedVariable)
-            "Elastic" force's coefficient
+        local_particle : {:ref:`theano.compile.SharedVariable`,
+                          list of :ref:`theano.compile.SharedVariable`}
+           A particle's position in parameter space doing local SGD.
+        central_particle : {:ref:`theano.compile.SharedVariable`,
+                            list of :ref:`theano.compile.SharedVariable`}
+           Central particle's position in parameter space interacting with
+           local particles.
+        alpha: scalar
+           "Elastic" force's coefficient
 
         .. note::
-            If `alpha` == 0 is used, there is no synchronization of the
-            parameters meaning that each worker is independently training using SGD.
+           If `alpha` == 0 is used, there is no synchronization of the
+           parameters meaning that each worker is independently training using SGD.
+
+        .. seealso:: Notes on :meth:`GlobalDynamics.make_rule`
 
         """
         import theano
@@ -219,7 +251,52 @@ class EASGD(_GlobalDynamicsNoSet):
 
 
 class Downpour(_GlobalDynamicsNoSet):
+    """Synchronous variant of Downpour distributed optimization technique
+
+    This algorithm is described in details in the following paper:
+    http://research.google.com/archive/large_deep_networks_nips2012.html
+
+    Parameters
+    ----------
+    average : bool, optional
+       If True, it will average the sum of locally accumulated parameter updates
+       in every global update.
+    worker : :class:`channel.Worker`, optional
+       See :class:`GlobalDynamics`.
+
+    .. versionadded:: 0.6.0
+
+    """
+    def __init__(self, average=False, worker=None):
+        self.average = average
+        super(Downpour, self).__init__(worker)
+
     def make_rule(self, local_particle, local_acc_updates, global_particle):
+        """Make Downpour rule.
+
+        All particles along with the global particle start from the same
+        position. According to this rule, each local particle executes descent
+        normally but their parameter updates are accumulated (e.g. by moving
+        average) to a variable. Every N iterations, the local accumulated
+        updates are added together and applied to the global particle. Each
+        local particle restarts from global particle's position.
+
+        Parameters
+        ----------
+        local_particle : {:ref:`theano.compile.SharedVariable`,
+                          list of :ref:`theano.compile.SharedVariable`}
+           A particle's position in parameter space doing local SGD.
+        local_acc_updates : {:ref:`theano.compile.SharedVariable`,
+                             list of :ref:`theano.compile.SharedVariable`}
+           Shared variable accumulating local parameter updates.
+        global_particle : {:ref:`theano.compile.SharedVariable`,
+                           list of :ref:`theano.compile.SharedVariable`}
+           A particle whose position is updated only by the Downpour process and
+           resets position of local particles.
+
+        .. seealso:: Notes on :meth:`GlobalDynamics.make_rule`
+
+        """
         import theano
         from theano.tensor import basic
         if isinstance(local_particle, theano.compile.SharedVariable):
@@ -234,6 +311,8 @@ class Downpour(_GlobalDynamicsNoSet):
         new_acc_updates = []
         for lp, lau, gp in zip(local_particle, local_acc_updates, global_particle):
             global_acc_updates = AllReduceSum(lau, inplace=True)
+            if self.average:
+                global_acc_updates /= self.worker.global_size
             new_global.append(gp + global_acc_updates)
             new_local.append(new_global[-1])
             new_acc_updates.append(basic.zeros_like(lau))
