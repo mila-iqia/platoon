@@ -1,4 +1,4 @@
-To functional test the new worker interface, you need to:
+To functional test the *all_reduce* worker interface, you need to:
 
 1. Export the environmental variable `PLATOON_TEST_WORKERS_NUM` to be equal to
    the total number of workers (GPUs) to be spawned across hosts in the
@@ -18,3 +18,10 @@ To profile and benchmark the new worker interface, you need to run
 
 To test and profile the Theano Ops of worker interface, you need to run
 `platoon-launcher test_ops` in current directory.
+
+To test implementations of global dynamics, please run
+`platoon-launcher test_global_dynamics` in current directory.
+
+**Note**: Depending on your hardware configuration, launching on defaults
+Platoon may not suffice for a successful execution. Please check the
+documentation and *platoonrc.conf* on how to configure Platoon.
