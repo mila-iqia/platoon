@@ -5,20 +5,34 @@ It supports **data-parallelism** inside one compute node, not
 model-parallelism. For model-parallelism check [Theano multiple GPUs
 tutorial](http://deeplearning.net/software/theano/tutorial/using_multi_gpu.html).
 
-This framework is still a prototype. It's interfaces is not polished and it is
-likely to undergo changes in the future.
-
-The framework allows multiple data-parallel algorithms, but only
-[EASGD](http://arxiv.org/abs/1412.6651) and ASGD is currently implemented.
-
-There are working examples in the examples directory.
-
 In Platoon, there are two main components : workers, and controllers.
 Workers do the bulk of the work (training, monitoring, ...). Controllers
 interact with multiple workers to coordinate their work, collect the results
-and decide how to act on them. To use Platoon, you will need to implement both
-your workers and your controller but Platoon provides helper classes to
+and decide how to act on them. To use Platoon, you will need to write code which
+uses a worker. You can also extend the functionality of a worker or a controller by
+implementing your own. Platoon provides helper classes to
 facilitate this.
+
+This framework is under development. Its interface is not polished and it is
+likely to undergo changes in the future.
+
+The framework provides two separate worker interfaces that allow user to implement
+multiple data-parallel algorithms: *param_sync* and *all_reduce*. The default interface
+is *param_sync*. Installing optional dependencies listed in the features table below
+will make *all_reduce* interface available too.
+
+Interface | sync type | multi-node                  | Theano Ops | extra dependencies
+----------|-----------|-----------------------------|------------|--------------------
+param_sync| sync/async|  no                         | no         | no
+all_reduce| sync only | yes (if [mpi4py](https://github.com/mpi4py/mpi4py) is installed)| yes        | [NCCL](https://github.com/NVIDIA/nccl), [pygpu](https://github.com/Theano/libgpuarray), [Theano](https://github.com/Theano/Theano)
+
+There are currently two algorithms for distributed gradient descent implemented with
+*param_sync* interface and three with *all_reduce* interface.
+
+* **param_sync**: [EASGD](http://arxiv.org/abs/1412.6651) and ASGD.
+* **all_reduce**: Synchronous sum/average SGD, EASGD and a synchronous variant of [Downpour](http://research.google.com/archive/large_deep_networks_nips2012.html)
+
+There are working examples in the examples directory.
 
 The steps below describe what needs to be done to use Platoon for
 data-parallelism. The LSTM example in the folder 'example' was implemented
@@ -40,16 +54,21 @@ Then install what you just cloned.
 
 
 ## Usage
-The simplest way to launch a multi-gpu experiment is to first implement a controller and a worker as described below and then launch it using the `platoon-launcher`.
+The simplest way to launch a multi-gpu experiment is to first implement a controller and a worker as described below and then launch it using the `platoon-launcher`. It is not necessary that you have implemented a controller file if you want
+to use the existing controller functionality.
 
-The launcher assume that you named both files as such: `<experiment-name>_controller.py` and `<experiment-name>_worker.py`
+The launcher assume that you named both files as such: `<experiment-name>_controller.py` and `<experiment-name>_worker.py`.
 
-Then to launch the experiment you just need to specify the experiment name and GPUs you want to use.
+Then to launch the experiment you just need to specify the experiment name and GPUs you want to use:
 
-`platoon-launcher <experiment-name> gpu0 gpu1`
+`platoon-launcher <experiment-name> -D gpu0 gpu1`
 
+You can also omit the `-D` argument and let launcher find all available CUDA GPUs to use
+in the single-node experiment:
 
-For more advanced use see `platoon-launcher -h`.
+`platoon-launcher <experiment-name>`
+
+For more configuration options, see `platoon-launcher -h`.
 
 
 ### Implementing a controller
@@ -119,7 +138,7 @@ workers can result in a better test error.
 ## Examples
 See `example` folder.
 
-### Timing of the LSTM example on 2 k80
+### Timing of the LSTM example on 2 k80 for *param_sync* interface
 The timing is about efficiency of computation, not efficiency of
 training.  So the parameter alpha is constant. The number of mini-batches
 is fixed as the hyper-parameter. The sync is also fixed to be after 10
