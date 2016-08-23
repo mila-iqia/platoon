@@ -1,7 +1,8 @@
 from __future__ import print_function
-import cPickle
-import gzip
 import os
+import gzip
+
+from six.moves import cPickle
 
 import numpy
 import theano
@@ -69,9 +70,9 @@ def get_dataset_file(dataset, default_dataset, origin):
             dataset = new_path
 
     if (not os.path.isfile(dataset)) and data_file == default_dataset:
-        import urllib
+        from six.moves import urllib
         print('Downloading data from %s' % origin)
-        urllib.urlretrieve(origin, dataset)
+        urllib.request.urlretrieve(origin, dataset)
     return dataset
 
 

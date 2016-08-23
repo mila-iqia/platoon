@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 import os
 import sys
 import gzip
@@ -69,7 +69,8 @@ class BatchedPixelSum(object):
                 print("Done")
                 import time
                 time.sleep(1)
-                step = self._worker.send_req(dict(done=nb_batches_before_sync))
+                step = self._worker.send_req('done',
+                                             dict(num_batches=nb_batches_before_sync))
 
                 print("Syncing with global params.")
                 self._worker.sync_params(synchronous=True)

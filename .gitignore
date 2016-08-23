@@ -55,3 +55,15 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Platoon log folders
+PLATOON_LOGS/
+*.prof
+*.out
+*.err
+*.conf
+.platoonrc
+conf_from_topo.py
+test.sh
+test_scripts/
+!./platoonrc.conf

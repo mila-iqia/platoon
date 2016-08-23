@@ -1,10 +1,14 @@
 '''
 Build a tweet sentiment analyzer
 '''
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 from collections import OrderedDict
 import sys
 import argparse
+
+import six
+from six import iteritems
+from six.moves import range
 
 import numpy
 import theano
@@ -23,9 +27,12 @@ from platoon.param_sync import EASGD
 
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
 
+worker = Worker(control_port=5567)
 # Set the random number generators' seeds for consistency
+# Each worker **MUST** be seeded with a different number, so that
+# they do not draw the same minibatches!
 SEED = 123
-numpy.random.seed(SEED)
+numpy.random.seed(SEED + worker.global_rank)
 
 
 def numpy_floatX(data):
@@ -64,7 +71,7 @@ def zipp(params, tparams):
     """
     When we reload the model. Needed for the GPU stuff.
     """
-    for kk, vv in params.iteritems():
+    for kk, vv in iteritems(params):
         tparams[kk].set_value(vv)
 
 
@@ -73,7 +80,7 @@ def unzip(zipped):
     When we pickle the model. Needed for the GPU stuff.
     """
     new_params = OrderedDict()
-    for kk, vv in zipped.iteritems():
+    for kk, vv in iteritems(zipped):
         new_params[kk] = vv.get_value()
     return new_params
 
@@ -114,7 +121,7 @@ def init_params(options):
 
 def load_params(path, params):
     pp = numpy.load(path)
-    for kk, vv in params.iteritems():
+    for kk, vv in iteritems(params):
         if kk not in pp:
             raise Warning('%s is not in the archive' % kk)
         params[kk] = pp[kk]
@@ -124,7 +131,7 @@ def load_params(path, params):
 
 def init_tparams(params):
     tparams = OrderedDict()
-    for kk, pp in params.iteritems():
+    for kk, pp in iteritems(params):
         tparams[kk] = theano.shared(params[kk], name=kk)
     return tparams
 
@@ -225,7 +232,7 @@ def sgd(lr, tparams, grads, x, mask, y, cost):
     # New set of shared variable that will contain the gradient
     # for a mini-batch.
     gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % k)
-               for k, p in tparams.iteritems()]
+               for k, p in iteritems(tparams)]
     gsup = [(gs, g) for gs, g in zip(gshared, grads)]
 
     # Function that computes gradients for a mini-batch, but do not
@@ -274,13 +281,13 @@ def adadelta(lr, tparams, grads, x, mask, y, cost):
 
     zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                   name='%s_grad' % k)
-                    for k, p in tparams.iteritems()]
+                    for k, p in iteritems(tparams)]
     running_up2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                  name='%s_rup2' % k)
-                   for k, p in tparams.iteritems()]
+                   for k, p in iteritems(tparams)]
     running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                     name='%s_rgrad2' % k)
-                      for k, p in tparams.iteritems()]
+                      for k, p in iteritems(tparams)]
 
     zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2))
@@ -337,13 +344,13 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
 
     zipped_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                   name='%s_grad' % k)
-                    for k, p in tparams.iteritems()]
+                    for k, p in iteritems(tparams)]
     running_grads = [theano.shared(p.get_value() * numpy_floatX(0.),
                                    name='%s_rgrad' % k)
-                     for k, p in tparams.iteritems()]
+                     for k, p in iteritems(tparams)]
     running_grads2 = [theano.shared(p.get_value() * numpy_floatX(0.),
                                     name='%s_rgrad2' % k)
-                      for k, p in tparams.iteritems()]
+                      for k, p in iteritems(tparams)]
 
     zgup = [(zg, g) for zg, g in zip(zipped_grads, grads)]
     rgup = [(rg, 0.95 * rg + 0.05 * g) for rg, g in zip(running_grads, grads)]
@@ -356,7 +363,7 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
 
     updir = [theano.shared(p.get_value() * numpy_floatX(0.),
                            name='%s_updir' % k)
-             for k, p in tparams.iteritems()]
+             for k, p in iteritems(tparams)]
     updir_new = [(ud, 0.9 * ud - 1e-4 * zg / tensor.sqrt(rg2 - rg ** 2 + 1e-4))
                  for ud, zg, rg, rg2 in zip(updir, zipped_grads, running_grads,
                                             running_grads2)]
@@ -475,9 +482,8 @@ def train_lstm(
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
     valid_sync=False,
+    param_sync_api=False
 ):
-
-    worker = Worker(control_port=5567)
 
     # Model options
     model_options = locals().copy()
@@ -514,7 +520,17 @@ def train_lstm(
     # params and tparams have different copy of the weights.
     tparams = init_tparams(params)
 
-    worker.init_shared_params(tparams.values(), param_sync_rule=EASGD(0.5))
+    list_tparams = list(tparams.values())
+    if param_sync_api:
+        print("Using param_sync worker's interface!")
+        worker.init_shared_params(list_tparams, param_sync_rule=EASGD(0.5))
+    else:
+        print("Using all_reduce worker's interface!")
+        from platoon.training import global_dynamics as gd
+        cparams = init_tparams(params)
+        list_cparams = list(cparams.values())
+        easgd = gd.EASGD(worker)
+        easgd.make_rule(list_tparams, list_cparams, 0.5)
     print("Params init done")
 
     # use_noise is for dropout
@@ -530,7 +546,7 @@ def train_lstm(
 
     f_cost = theano.function([x, mask, y], cost, name='f_cost')
 
-    grads = tensor.grad(cost, wrt=tparams.values())
+    grads = tensor.grad(cost, wrt=list_tparams)
     f_grad = theano.function([x, mask, y], grads, name='f_grad')
 
     lr = tensor.scalar(name='lr')
@@ -556,7 +572,8 @@ def train_lstm(
     best_p = None
 
     # Making sure that the worker start training with the most recent params
-    worker.copy_to_local()
+    if param_sync_api:
+        worker.copy_to_local()
 
     while True:
         step = worker.send_req('next')
@@ -564,15 +581,18 @@ def train_lstm(
 
         if step == 'train':
             use_noise.set_value(numpy_floatX(1.))
-            for i in xrange(train_len):
+            for i in range(train_len):
                 x, mask, y = next(train_it)
                 cost = f_grad_shared(x, mask, y)
                 f_update(lrate)
             print('Train cost:', cost)
-            step = worker.send_req(dict(done=train_len))
+            step = worker.send_req('done', {'train_len': train_len})
 
             print("Syncing with global params")
-            worker.sync_params(synchronous=True)
+            if param_sync_api:
+                worker.sync_params(synchronous=True)
+            else:
+                easgd()
 
         """
         if step.startswith('save '):
@@ -585,27 +605,27 @@ def train_lstm(
         """
 
         if step == 'valid':
-            if valid_sync:
+            if param_sync_api and valid_sync:
                 worker.copy_to_local()
             use_noise.set_value(numpy_floatX(0.))
             valid_err = pred_error(f_pred, prepare_data, valid,
                                    kf_valid)
             test_err = pred_error(f_pred, prepare_data, test, kf_test)
-            res = worker.send_req(dict(test_err=float(test_err),
-                                       valid_err=float(valid_err)))
+            res = worker.send_req('pred_errors', dict(test_err=float(test_err),
+                                  valid_err=float(valid_err)))
 
             if res == 'best':
                 best_p = unzip(tparams)
 
             print(('Valid ', valid_err,
                    'Test ', test_err))
-            if valid_sync:
+            if param_sync_api and valid_sync:
                 worker.copy_to_local()
 
         if step == 'stop':
             break
 
-    # Release all shared ressources.
+    # Release all shared resources.
     worker.close()
 
     # FIX that shit later.
@@ -637,6 +657,8 @@ if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
+    parser.add_argument('--param-sync-api', action='store_true', default=False)
     args = parser.parse_args()
 
-    train_lstm(valid_sync=args.valid_sync, test_size=500)
+    train_lstm(valid_sync=args.valid_sync, test_size=500,
+               param_sync_api=args.param_sync_api)
