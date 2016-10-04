@@ -5,7 +5,7 @@ setup(
     name='platoon',
     version='0.6.0',
     author='MILA',
-    packages=['platoon'],
+    packages=['platoon', 'platoon.channel', 'platoon.training'],
     scripts=['scripts/platoon-launcher'],
     url='https://github.com/mila-udem/platoon/',
     license='MIT',
