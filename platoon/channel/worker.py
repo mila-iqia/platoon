@@ -668,6 +668,7 @@ class Worker(object):
             description="Base Platoon Worker process.")
         parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
         parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
+        parser.add_argument('--data-hwm', default=10, type=int, required=False, help='The data port high water mark')
         return parser
 
     @staticmethod
@@ -683,6 +684,6 @@ class Worker(object):
         .. versionadded:: 0.6.0
 
         """
-        DEFAULT_KEYS = ['control_port', 'data_port']
+        DEFAULT_KEYS = ['control_port', 'data_hwm', 'data_port']
         d = args.__dict__
         return dict((k, d[k]) for k in six.iterkeys(d) if k in DEFAULT_KEYS)

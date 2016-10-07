@@ -145,6 +145,9 @@ class Controller(object):
             if worker_args is None:
                 worker_args = ''
             worker_args += " --control-port=%d" % control_port
+            worker_args += " --data-hwm=%d" % data_hwm
+            if data_port:
+                worker_args += " --data-port=%d" % data_port
             try:
                 for device in self._devices:
                     p = launch_process(log_directory, experiment_name,
