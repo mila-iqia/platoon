@@ -87,15 +87,20 @@ class Worker(object):
        operations. Used by :meth:`all_reduce` interface.
 
     """
-    def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
+    def __init__(self, control_port, data_port=None, socket_timeout=300000,
+                 hwm=10, port=None):
+        if port is not None:
+            raise RuntimeError(
+                "The port parameter of Worker was renamed to data_port"
+                " (as in the Controller)")
         self.context = zmq.Context()
 
         self._socket_timeout = socket_timeout
 
         self._worker_id = os.getpid()
 
-        if port:
-            self.init_mb_sock(port, hwm)
+        if data_port:
+            self.init_mb_sock(data_port, hwm)
 
         self._init_control_socket(control_port)
 
