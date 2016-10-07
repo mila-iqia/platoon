@@ -25,14 +25,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from platoon.channel import Worker
 from platoon.param_sync import EASGD
 
+worker = None
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
-
-worker = Worker(control_port=5567)
-# Set the random number generators' seeds for consistency
-# Each worker **MUST** be seeded with a different number, so that
-# they do not draw the same minibatches!
-SEED = 123
-numpy.random.seed(SEED + worker.global_rank)
 
 
 def numpy_floatX(data):
@@ -654,11 +648,20 @@ def train_lstm(
 """
 
 if __name__ == '__main__':
+    global worker
+
     # See function train for all possible parameter and there definition.
-    parser = argparse.ArgumentParser(description='')
+    parser = Worker.default_parser()
     parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
     parser.add_argument('--param-sync-api', action='store_true', default=False)
     args = parser.parse_args()
+
+    worker = Worker(**Worker.default_arguments(args))
+    # Set the random number generators' seeds for consistency
+    # Each worker **MUST** be seeded with a different number, so that
+    # they do not draw the same minibatches!
+    SEED = 123
+    numpy.random.seed(SEED + worker.global_rank)
 
     train_lstm(valid_sync=args.valid_sync, test_size=500,
                param_sync_api=args.param_sync_api)
