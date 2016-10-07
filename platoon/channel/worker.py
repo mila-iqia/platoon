@@ -30,6 +30,7 @@ work on from Controller.
 
 """
 from __future__ import absolute_import, print_function
+import argparse
 import os
 import sys
 import signal
@@ -87,19 +88,25 @@ class Worker(object):
        operations. Used by :meth:`all_reduce` interface.
 
     """
-    def __init__(self, control_port, port=None, socket_timeout=300000, hwm=10):
+    def __init__(self, control_port, data_port=None, socket_timeout=300000,
+                 data_hwm=10, port=None):
+        if port is not None:
+            raise RuntimeError(
+                "The port parameter of Worker was renamed to data_port"
+                " (as in the Controller)")
         self.context = zmq.Context()
 
         self._socket_timeout = socket_timeout
 
         self._worker_id = os.getpid()
 
-        if port:
-            self.init_mb_sock(port, hwm)
+        if data_port:
+            self.init_mb_sock(data_port, data_hwm)
 
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
+        print("JOB UID received from the controler {}".format(self._job_uid))
         self._lock = posix_ipc.Semaphore("{}_lock".format(self._job_uid))
 
         signal.signal(signal.SIGINT, self._handle_force_close)
@@ -288,7 +295,7 @@ class Worker(object):
         else:
             raise AttributeError("pygpu or theano is not imported")
 
-    def init_mb_sock(self, port, hwm=10):
+    def init_mb_sock(self, port, data_hwm=10):
         """
         Initialize the mini-batch data socket.
 
@@ -296,7 +303,7 @@ class Worker(object):
         ----------
         port : int
            The tcp port to reach the mini-batch server on.
-        hwm : int, optional
+        data_hwm : int, optional
            High water mark, see pyzmq docs.
 
         .. note::
@@ -305,7 +312,7 @@ class Worker(object):
         """
         self.asocket = self.context.socket(zmq.PULL)
         self.asocket.setsockopt(zmq.LINGER, 0)
-        self.asocket.set_hwm(hwm)
+        self.asocket.set_hwm(data_hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
 
         self.apoller = zmq.Poller()
@@ -645,3 +652,38 @@ class Worker(object):
                 order='F' if header['fortran_order'] else 'C')
             arrays.append(array)
         return arrays
+
+    @staticmethod
+    def default_parser():
+        """
+        Returns base :class:`Controller`'s class parser for its arguments.
+
+        This parser can be augmented with more arguments, if it is needed, in
+        case a class which inherits :class:`Controller` exists.
+
+        .. versionadded:: 0.6.1
+
+        """
+        parser = argparse.ArgumentParser(
+            description="Base Platoon Worker process.")
+        parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
+        parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
+        parser.add_argument('--data-hwm', default=10, type=int, required=False, help='The data port high water mark')
+        return parser
+
+    @staticmethod
+    def default_arguments(args):
+        """
+        Static method which returns the correct arguments for a base
+        :class:`Controller` class.
+
+        :param args:
+           Object returned by calling :meth:`argparse.ArgumentParser.parse_args`
+           to a parser returned by :func:`default_parser`.
+
+        .. versionadded:: 0.6.0
+
+        """
+        DEFAULT_KEYS = ['control_port', 'data_hwm', 'data_port']
+        d = args.__dict__
+        return dict((k, d[k]) for k in six.iterkeys(d) if k in DEFAULT_KEYS)

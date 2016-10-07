@@ -30,7 +30,7 @@ class SUMSync(ParamSyncRule):
 class BatchedPixelSum(object):
 
     def __init__(self, control_port, batch_port):
-        self._worker = Worker(control_port=control_port, port=batch_port)
+        self._worker = Worker(control_port=control_port, data_port=batch_port)
 
         data_shape = self._worker.send_req('get_data_shape')
 

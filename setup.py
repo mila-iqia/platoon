@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='platoon',
-    version='0.6.0',
+    version='0.6.1',
     author='MILA',
     packages=['platoon', 'platoon.channel', 'platoon.training'],
     scripts=['scripts/platoon-launcher'],
