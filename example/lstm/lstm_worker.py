@@ -648,8 +648,6 @@ def train_lstm(
 """
 
 if __name__ == '__main__':
-    global worker
-
     # See function train for all possible parameter and there definition.
     parser = Worker.default_parser()
     parser.add_argument('--valid_sync', dest='valid_sync', action='store_true', default=False)
