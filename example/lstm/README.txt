@@ -15,7 +15,13 @@ LSTM example using Platoon.
    `cd platoon/example/lstm/`
 
 1) Launch the experiment on 2 GPUs using the platoon-launcher script.
-   `platoon-launcher lstm gpu0 gpu2`
+   `platoon-launcher lstm -D cuda0 cuda2`
+
+To see all controller parameters do: `python lstm_controller.py -h`
+To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda2 -c=...`
+
+To see all worker parameters do: `python lstm_worker.py -h`
+To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda2 -w=...`
 
 # MANUALLY
 1) Assuming you are in the lstm folder.
