@@ -105,6 +105,7 @@ class Worker(object):
         self._init_control_socket(control_port)
 
         self._job_uid = self.send_req("platoon-get_job_uid")
+        print("JOB UID received from the controler {}".format(self._job_uid))
         self._lock = posix_ipc.Semaphore("{}_lock".format(self._job_uid))
 
         signal.signal(signal.SIGINT, self._handle_force_close)
