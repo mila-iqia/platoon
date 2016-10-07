@@ -88,7 +88,7 @@ class Worker(object):
 
     """
     def __init__(self, control_port, data_port=None, socket_timeout=300000,
-                 hwm=10, port=None):
+                 data_hwm=10, port=None):
         if port is not None:
             raise RuntimeError(
                 "The port parameter of Worker was renamed to data_port"
@@ -100,7 +100,7 @@ class Worker(object):
         self._worker_id = os.getpid()
 
         if data_port:
-            self.init_mb_sock(data_port, hwm)
+            self.init_mb_sock(data_port, data_hwm)
 
         self._init_control_socket(control_port)
 
@@ -293,7 +293,7 @@ class Worker(object):
         else:
             raise AttributeError("pygpu or theano is not imported")
 
-    def init_mb_sock(self, port, hwm=10):
+    def init_mb_sock(self, port, data_hwm=10):
         """
         Initialize the mini-batch data socket.
 
@@ -301,7 +301,7 @@ class Worker(object):
         ----------
         port : int
            The tcp port to reach the mini-batch server on.
-        hwm : int, optional
+        data_hwm : int, optional
            High water mark, see pyzmq docs.
 
         .. note::
@@ -310,7 +310,7 @@ class Worker(object):
         """
         self.asocket = self.context.socket(zmq.PULL)
         self.asocket.setsockopt(zmq.LINGER, 0)
-        self.asocket.set_hwm(hwm)
+        self.asocket.set_hwm(data_hwm)
         self.asocket.connect("tcp://localhost:{}".format(port))
 
         self.apoller = zmq.Poller()

@@ -611,7 +611,7 @@ class Controller(object):
 #                           Distribute Data Batches                            #
 ################################################################################
 
-    def init_data(self, port, hwm=10):
+    def init_data(self, port, data_hwm=10):
         """
         Initialize the mini-batch socket.
 
@@ -621,13 +621,13 @@ class Controller(object):
         ----------
         port : int
            The port to listen on.
-        hwm : int
+        data_hwm : int
            High water mark, see the pyzmq docs.
 
         """
         self.acontext = zmq.Context()
         self.asocket = self.acontext.socket(zmq.PUSH)
-        self.asocket.set_hwm(hwm)
+        self.asocket.set_hwm(data_hwm)
         self.asocket.bind('tcp://*:{}'.format(port))
 
     def send_mb(self, arrays):
