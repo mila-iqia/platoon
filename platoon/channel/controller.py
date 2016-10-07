@@ -142,10 +142,13 @@ class Controller(object):
                 os.makedirs(log_directory)
             except OSError:
                 pass
+            if worker_args is None:
+                worker_args = ''
+            worker_args += " --control-port=%d" % control_port
             try:
                 for device in self._devices:
                     p = launch_process(log_directory, experiment_name,
-                                       shlex.split(worker_args or ''), device,
+                                       shlex.split(worker_args), device,
                                        "worker")
                     self._workers.add(p.pid)
             except OSError as exc:
