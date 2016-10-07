@@ -30,6 +30,7 @@ work on from Controller.
 
 """
 from __future__ import absolute_import, print_function
+import argparse
 import os
 import sys
 import signal
@@ -651,3 +652,37 @@ class Worker(object):
                 order='F' if header['fortran_order'] else 'C')
             arrays.append(array)
         return arrays
+
+    @staticmethod
+    def default_parser():
+        """
+        Returns base :class:`Controller`'s class parser for its arguments.
+
+        This parser can be augmented with more arguments, if it is needed, in
+        case a class which inherits :class:`Controller` exists.
+
+        .. versionadded:: 0.6.1
+
+        """
+        parser = argparse.ArgumentParser(
+            description="Base Platoon Worker process.")
+        parser.add_argument('--control-port', default=5567, type=int, required=False, help='The control port number.')
+        parser.add_argument('--data-port', type=int, required=False, help='The data port number.')
+        return parser
+
+    @staticmethod
+    def default_arguments(args):
+        """
+        Static method which returns the correct arguments for a base
+        :class:`Controller` class.
+
+        :param args:
+           Object returned by calling :meth:`argparse.ArgumentParser.parse_args`
+           to a parser returned by :func:`default_parser`.
+
+        .. versionadded:: 0.6.0
+
+        """
+        DEFAULT_KEYS = ['control_port', 'data_port']
+        d = args.__dict__
+        return dict((k, d[k]) for k in six.iterkeys(d) if k in DEFAULT_KEYS)
