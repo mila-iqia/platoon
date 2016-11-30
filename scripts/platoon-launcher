@@ -130,7 +130,7 @@ if __name__ == '__main__':
             executable = ["-m", "platoon.channel.controller"]
         else:
             executable = ["{}_controller.py".format(controller_type)]
-        command += ["python", "-u"] + executable
+        command += [sys.executable, "-u"] + executable
         command += [args.experiment_name, logs_folder, "--multi"]
         if args.controller_args:
             command += shlex.split(args.controller_args)
