@@ -23,8 +23,7 @@ import imdb
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from platoon.channel import Worker
-from platoon.param_sync import EASGD
-from platoon.training import global_dynamics as gd
+from platoon.training.global_dynamics import AverageSGD
 
 worker = None
 datasets = {'imdb': (imdb.load_data, imdb.prepare_data)}
@@ -371,8 +370,8 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
     return f_grad_shared, f_update
 
 
-def build_model(tparams, options):
-    trng = RandomStreams(SEED)
+def build_model(tparams, options, seed=1234):
+    trng = RandomStreams(seed)
 
     # Used for dropout.
     use_noise = theano.shared(numpy_floatX(0.))
@@ -455,19 +454,16 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
 def train_lstm(
     dim_proj=1024,  # word embeding dimension and LSTM number of hidden units.
 
-    # This value is suggested as being good in the EASGD paper, but
-    # you may want to tune this
-    train_len=10,  # Train for this many minibatches when requested
-
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
     lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
     n_words=10000,  # Vocabulary size
-    optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
+    optimizer=adadelta, # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
     maxlen=100,  # Sequence longer then this get ignored
-    batch_size=16,  # The batch size during training.
+    batch_size=32,  # The batch size during training.
     valid_batch_size=64,  # The batch size used for validation/test set.
+    validFreq=3, # epoch frequency
     dataset='imdb',
 
     # Parameter for extra option
@@ -477,6 +473,12 @@ def train_lstm(
     reload_model=None,  # Path to a saved model we want to start from.
     test_size=-1,  # If >0, we keep only this number of test example.
 ):
+
+    # Each worker needs the same seed in order to draw the same parameters.
+    # This will also make them shuffle the batches the same way, but splits are
+    # different so doesnt matter
+    seed = worker.send_req('seed')
+    numpy.random.seed(seed)
 
     # Model options
     model_options = locals().copy()
@@ -515,15 +517,15 @@ def train_lstm(
 
     list_tparams = list(tparams.values())
     print("Using all_reduce worker's interface!")
-    cparams = init_tparams(params)
-    list_cparams = list(cparams.values())
-    easgd = gd.EASGD(worker)
-    easgd.make_rule(list_tparams, list_cparams, 0.5)
+    asgd = AverageSGD(worker)
+    asgd.make_rule(list_tparams)
     print("Params init done")
 
     # use_noise is for dropout
+    # here we could use a different seed?
     (use_noise, x, mask,
-     y, f_pred_prob, f_pred, cost) = build_model(tparams, model_options)
+     y, f_pred_prob, f_pred, cost) = build_model(tparams, model_options,
+                                                 seed=seed + worker.global_rank)
 
     if decay_c > 0.:
         decay_c = theano.shared(numpy_floatX(decay_c), name='decay_c')
@@ -575,39 +577,38 @@ def train_lstm(
     train_it = train_iter()
     nb_train = len(train[0]) // batch_size
 
-    best_p = None
 
-
+    epoch = 0
     while True:
         use_noise.set_value(numpy_floatX(1.))
         for i in range(nb_train):
             x, mask, y = next(train_it)
             cost = f_grad_shared(x, mask, y)
             f_update(lrate)
-            easgd()
+            asgd()
 
         print('Train cost:', cost)
 
-        # do validation
-        # trick : each worker can do their valid without talking to the controller
-        # even if they finish before another worker, they will wait in the next
-        # epoch at the calling of all_reduce when they need to sync again
-        use_noise.set_value(numpy_floatX(0.))
-        valid_err = pred_error(f_pred, prepare_data, valid,
-                               kf_valid)
-        test_err = pred_error(f_pred, prepare_data, test, kf_test)
+        if numpy.mod(epoch, validFreq) == 0:
+            # do validation
+            # trick : each worker can do their valid without talking to the controller
+            # even if they finish before another worker, they will wait in the next
+            # epoch at the calling of all_reduce when they need to sync again
+            use_noise.set_value(numpy_floatX(0.))
+            valid_err = pred_error(f_pred, prepare_data, valid, kf_valid)
+            test_err = pred_error(f_pred, prepare_data, test, kf_test)
 
-        # they do need to send the result to the controller
-        res = worker.send_req('pred_errors', dict(test_err=float(test_err),
-                              valid_err=float(valid_err)))
+            # they do need to send the result to the controller
+            res = worker.send_req('pred_errors', dict(test_err=float(test_err),
+                                  valid_err=float(valid_err), epoch=epoch))
 
-        if res == 'best':
-            # should save the param at best
-            pass
+            if res == 'best':
+                # should save the param at best
+                pass
 
-        if res == 'stop':
-            break
-        print(res)
+            if res == 'stop':
+                break
+        epoch += 1
 
     # Release all shared resources.
     worker.close()
@@ -643,10 +644,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     worker = Worker(**Worker.default_arguments(args))
-    # Set the random number generators' seeds for consistency
-    # Each worker **MUST** be seeded with a different number, so that
-    # they do not draw the same minibatches!
-    SEED = 123
-    numpy.random.seed(SEED + worker.global_rank)
-
     train_lstm(test_size=500)
