@@ -125,6 +125,7 @@ class LSTMController(Controller):
             print("Best error test:", test_err)
             print( ("Training took %.1fs" % (end_time - self.start_time)), file=sys.stderr)
             control_response = 'stop'
+            self._close()
 
         return control_response
 

@@ -57,6 +57,48 @@ def get_minibatches_idx(n, minibatch_size, shuffle=False):
     return zip(range(len(minibatches)), minibatches)
 
 
+def get_minibatches_baseline(n, minibatch_size):
+    """
+    Used so that this single worker sees the same example in the same
+    order as a two worker setup who would split the dataset in half
+    for each worker where both use get_minibatches_idx shuffle=False
+    """
+    idx_list = numpy.arange(n, dtype="int32")
+    cutoff = minibatch_size / 2
+    crap_over = (len(idx_list)%minibatch_size) / 2
+
+    idx_list_1 = idx_list[:len(idx_list)/2]
+    crap_1 = idx_list_1[len(idx_list_1)-crap_over:]
+    idx_list_1 = idx_list_1[:len(idx_list_1)-crap_over]
+
+    idx_list_2 = idx_list[len(idx_list)/2:]
+    crap_2 = idx_list_2[len(idx_list_2)-crap_over:]
+    idx_list_2 = idx_list_2[:len(idx_list_2)-crap_over]
+
+    flag = True
+    k = 0
+    j = 0
+    minibatches = []
+    for i in range(len(idx_list_1) + len(idx_list_2)):
+        if not i%cutoff:
+            flag = not flag
+        if not flag:
+            minibatches.append(idx_list_1[j])
+            j += 1
+        else:
+            minibatches.append(idx_list_2[k])
+            k += 1
+
+    # but actually we needed np.array...
+    minibatches = [numpy.array(minibatches[i:i+minibatch_size], dtype="int32")
+                   for i in range(0, len(minibatches), minibatch_size)]
+    # arrrghhhh
+    craps = crap_1.tolist() + crap_2.tolist()
+    minibatches.append(numpy.array(craps, dtype="int32"))
+
+    return zip(range(len(minibatches)), minibatches)
+
+
 def get_dataset(name):
     return datasets[name][0], datasets[name][1]
 
@@ -461,8 +503,8 @@ def train_lstm(
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
     maxlen=100,  # Sequence longer then this get ignored
-    batch_size=32,  # The batch size during training.
-    valid_batch_size=64,  # The batch size used for validation/test set.
+    batch_size=64,  # The batch size during training.
+    valid_batch_size=50,  # The batch size used for validation/test set.
     validFreq=3, # epoch frequency
     dataset='imdb',
 
@@ -565,9 +607,11 @@ def train_lstm(
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size)
     kf_test = get_minibatches_idx(len(test[0]), valid_batch_size)
 
+
     def train_iter():
         while True:
-            kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=False)
+            #kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=False)
+            kf = get_minibatches_baseline(len(train[0]), batch_size)
             for _, train_index in kf:
                 y = [train[1][t] for t in train_index]
                 x = [train[0][t] for t in train_index]
