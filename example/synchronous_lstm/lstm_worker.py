@@ -371,6 +371,7 @@ def rmsprop(lr, tparams, grads, x, mask, y, cost):
 
 
 def build_model(tparams, options, seed=1234):
+    print(seed)
     trng = RandomStreams(seed)
 
     # Used for dropout.
@@ -460,9 +461,9 @@ def train_lstm(
     optimizer=adadelta, # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
-    maxlen=100,  # Sequence longer then this get ignored
-    batch_size=32,  # The batch size during training.
-    valid_batch_size=64,  # The batch size used for validation/test set.
+    maxlen=70,  # Sequence longer then this get ignored
+    batch_size=64,  # The batch size during training.
+    valid_batch_size=50,  # The batch size used for validation/test set.
     validFreq=3, # epoch frequency
     dataset='imdb',
 
@@ -525,7 +526,8 @@ def train_lstm(
     # here we could use a different seed?
     (use_noise, x, mask,
      y, f_pred_prob, f_pred, cost) = build_model(tparams, model_options,
-                                                 seed=seed + worker.global_rank)
+                                                 #seed=seed + worker.global_rank)
+                                                 seed=seed)
 
     if decay_c > 0.:
         decay_c = theano.shared(numpy_floatX(decay_c), name='decay_c')
@@ -544,7 +546,6 @@ def train_lstm(
                                         x, mask, y, cost)
 
     print('Optimization')
-    # splits the dataset among workers
     splits = worker.send_req('splits', {'train_len': len(train[0]),
                                         'valid_len': len(valid[0]),
                                         'test_len' : len(test[0])})
@@ -555,9 +556,6 @@ def train_lstm(
     train = train[:, splits['train_splits'][0]:splits['train_splits'][1]]
     valid = valid[:, splits['valid_splits'][0]:splits['valid_splits'][1]]
     test = test[:, splits['test_splits'][0]:splits['test_splits'][1]]
-    print(train.shape)
-    print(valid.shape)
-    print(test.shape)
     train = train.tolist()
     valid = valid.tolist()
     test = test.tolist()
@@ -567,7 +565,7 @@ def train_lstm(
 
     def train_iter():
         while True:
-            kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=False)
+            kf = get_minibatches_idx(len(train[0]), batch_size, shuffle=True)
             for _, train_index in kf:
                 y = [train[1][t] for t in train_index]
                 x = [train[0][t] for t in train_index]
@@ -576,7 +574,6 @@ def train_lstm(
 
     train_it = train_iter()
     nb_train = len(train[0]) // batch_size
-
 
     epoch = 0
     while True:

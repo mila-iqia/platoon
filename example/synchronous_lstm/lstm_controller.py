@@ -116,14 +116,14 @@ class LSTMController(Controller):
 
         if self.bad_counter > self.patience:
             print("Early stopping!")
-            end_time = time.time()
+            end_time = time.time() - self.start_time
             # should terminate with best printing and best dumping of params
             # and then close everything
             print("Best error valid:", self.best_dict['best_valid'])
             test_err = sum(self.test_history_errs[self.best_dict['best_epoch']]) / \
                     float(self.nb_worker)
             print("Best error test:", test_err)
-            print( ("Training took %.1fs" % (end_time - self.start_time)), file=sys.stderr)
+            print( ("Training took %.1fs" % (end_time)), file=sys.stderr)
             control_response = 'stop'
 
         return control_response
