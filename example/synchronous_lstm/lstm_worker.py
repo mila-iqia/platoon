@@ -461,9 +461,11 @@ def train_lstm(
     optimizer=adadelta, # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
-    maxlen=70,  # Sequence longer then this get ignored
-    batch_size=64,  # The batch size during training.
-    valid_batch_size=50,  # The batch size used for validation/test set.
+    maxlen=100,  # Sequence longer then this get ignored
+    batch_size=50,  # The batch size during training.
+    #batch_size=100,  # This size for a single gpu
+    valid_batch_size=60,  # The batch size used for validation/test set.
+    #valid_batch_size=120,  # This size for a single gpu
     validFreq=3, # epoch frequency
     dataset='imdb',
 
