@@ -612,30 +612,6 @@ def train_lstm(
     # Release all shared resources.
     worker.close()
 
-    # FIX that shit later.
-"""
-    if best_p is not None:
-        zipp(best_p, tparams)
-    else:
-        best_p = unzip(tparams)
-
-    use_noise.set_value(numpy_floatX(0.))
-    kf_train_sorted = get_minibatches_idx(len(train[0]), batch_size)
-    train_err = pred_error(f_pred, prepare_data, train, kf_train_sorted)
-    valid_err = pred_error(f_pred, prepare_data, valid, kf_valid)
-    test_err = pred_error(f_pred, prepare_data, test, kf_test)
-
-    print 'Train ', train_err, 'Valid ', valid_err, 'Test ', test_err
-    if saveto:
-        numpy.savez(saveto, train_err=train_err,
-                    valid_err=valid_err, test_err=test_err,
-                    history_errs=history_errs, **best_p)
-    print 'The code run for %d epochs, with %f sec/epochs' % (
-        (eidx + 1), (end_time - start_time) / (1. * (eidx + 1)))
-    print >> sys.stderr, ('Training took %.1fs' %
-                          (end_time - start_time))
-    return train_err, valid_err, test_err
-"""
 
 if __name__ == '__main__':
     # See function train for all possible parameter and there definition.
