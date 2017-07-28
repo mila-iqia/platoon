@@ -1,5 +1,5 @@
 ## GOAL ##
-LSTM example using Platoon.
+LSTM example using Platoon *all reduce* interface
 
 
 ## CONTENT ##
@@ -37,3 +37,10 @@ To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cu
 ## NOTE ##
 If you use the MANUAL way, you may want to run them in different windows of screen or tmux.
 They all expect to be in the foreground.
+
+
+## TIMING ##
+These timings were done using the Nvidia DGX-1 and by averaging results from 
+two runs for each setup. 
+1 GPU : 5.698 seconds / epoch
+2 GPU : 2.230 seconds / epoch
