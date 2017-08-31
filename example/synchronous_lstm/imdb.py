@@ -76,7 +76,7 @@ def get_dataset_file(dataset, default_dataset, origin):
     return dataset
 
 
-def load_data(path="/Tmp/mastropo/imdb.pkl", n_words=100000, valid_portion=0.1, maxlen=None,
+def load_data(path="imdb.pkl", n_words=100000, valid_portion=0.1, maxlen=None,
               sort_by_len=True):
     '''Loads the dataset
 
