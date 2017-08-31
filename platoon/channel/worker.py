@@ -280,12 +280,10 @@ class Worker(object):
             self.device = theanoconf.device
             self._local_id = gpucoll.GpuCommCliqueId(context=self.gpuctx)
             # Ask controller for local's info to participate in
-            lid = base64.b85encode(self._local_id.comm_id).decode('ascii')
             response = self.send_req("platoon-get_platoon_info",
                                      info={'device': self.device,
-                                           'local_id': lid})
-            nlid = base64.b85decode(response['local_id'].encode('ascii'))
-            self._local_id.comm_id = bytearray(nlid)
+                                           'local_id': self._local_id.comm_id.decode('utf-8')})
+            self._local_id.comm_id = bytearray(response['local_id'].encode('utf-8'))
             self._local_size = response['local_size']
             self._local_rank = response['local_rank']
             self._local_comm = gpucoll.GpuComm(self._local_id,
