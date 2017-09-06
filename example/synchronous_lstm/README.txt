@@ -7,36 +7,45 @@ LSTM example using Platoon *all reduce* interface
 - lstm_controller.py
 - lstm_worker.py
 - imdb.py
+It is assumed that imdb.pkl is in the same foler, otherwise it will be downloaded.
 
 
 ## HOW TO USE ##
 # USING THE LAUNCHER
-1) Assuming you are in the lstm folder.
-   `cd platoon/example/lstm/`
+When the launcher is used, the outputs and errors of controller and workers are automatically
+stored in an auto-generated folder of PLATOON_LOGS/lstm/DATE_TIME.
 
-1) Launch the experiment on 2 GPUs using the platoon-launcher script.
-   `platoon-launcher lstm -D cuda0 cuda2`
+1) Assuming you are in the synchronous_lstm folder.
+   `cd platoon/example/synchronous_lstm/`
+
+2) Launch the experiment on 2 GPUs using the platoon-launcher script.
+   `platoon-launcher lstm -D cuda0 cuda1`
 
 To see all controller parameters do: `python lstm_controller.py -h`
-To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda2 -c=...`
+To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda1 -c=...`
 
 To see all worker parameters do: `python lstm_worker.py -h`
-To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda2 -w=...`
-
-# MANUALLY
-1) Assuming you are in the lstm folder.
-   `cd platoon/example/lstm/`
-
-2) Start the controller.
-   `THEANO_FLAGS='device=cpu' python -u lstm_controller.py`
-
-3) Start the worker. Repeat as needed changing the GPU id.
-   `THEANO_FLAGS='device=gpu0' python -u lstm_worker.py`
+To pass them via the platoon-launcher script: `platoon-launcher lstm -D cuda0 cuda1 -w=...`
 
 
-## NOTE ##
-If you use the MANUAL way, you may want to run them in different windows of screen or tmux.
-They all expect to be in the foreground.
+For setting THEANO_FLAGS for the workers, you can use the
+following command which sets floatX to float32 for all the workers:
+`THEANO_FLAGS=floatX=float32 platoon-launcher lstm -D cuda0 cuda1`
+
+# USING THE SCRIPTS
+When the scripts are used the path to store the outputs can be given.
+
+1) Assuming you are in the synchronous_lstm folder.
+   `cd platoon/example/synchronous_lstm/`
+
+2) Launch the experiment. Platoon will automatically find all the available GPUs
+   and run the workers on them:
+   THEANO_FLAGS=floatX=float32 python lstm_controller.py --single lstm PATH/TO/OUTPUT
+
+--single indicates the GPUs are all on the same machine.
+lstm is the name of the experiment. It will look for an lstm_worker.py to run the workers.
+THEANO_FLAGS are set for all the workers and not the controller. The controller should use
+the CPU.
 
 
 ## TIMING ##
