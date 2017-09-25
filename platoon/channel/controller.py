@@ -502,7 +502,7 @@ class Controller(object):
         """
         first = self._is_worker_first(self._get_platoon_info_count)  # See :meth:`_is_worker_first`
         if first:
-            self._local_id = "platoon-" + req_info['local_id']
+            self._local_id = req_info['local_id']
         response = dict()
         response['local_id'] = self._local_id
         response['local_size'] = self._local_size
